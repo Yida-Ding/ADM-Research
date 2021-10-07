@@ -12,5 +12,13 @@ iso22iso3={row.ISO2:row.ISO3 for row in pd.read_csv("../Countries/countries.csv"
 df["iso3"]=[iso22iso3.get(row.iso_country,"") for row in df.itertuples()]
 df=df[["iata_code","lat","lon","name","type","iso3","iso_region","municipality"]]
 df=df[df["iso3"]!=""]
-df=df.sort_values(["iso3"])
+
+df2=pd.read_csv("airportsWithYearlyPax.csv",na_filter=None)
+d={row.iata_code:row.passengers2015 for row in df2.itertuples()}
+
+df["pax"]=[d.get(row.iata_code,0) for row in df.itertuples()]
+df=df[df["pax"]>=100]
+
+df=df.sort_values(["pax"],ascending=False)
+
 df.to_csv("airports.csv",index=False)
