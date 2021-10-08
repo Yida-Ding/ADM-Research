@@ -13,7 +13,7 @@ import haversine
 class Scenario:
     def __init__(self,config,usedaps):
         self.config=config
-        self.dfairports=pd.read_csv("External/OurAirports/airports.csv",na_filter=None)
+        self.dfairports=pd.read_csv("0_External/OurAirports/airports.csv",na_filter=None)
         self.dfairports=self.dfairports[self.dfairports["iata_code"].isin(usedaps)]
         self.airports=self.dfairports["iata_code"].tolist()
         self.ap2loc={row.iata_code:(row.lat,row.lon) for row in self.dfairports.itertuples()}
@@ -43,7 +43,7 @@ class Scenario:
         usedaps=set([f[0] for f in flights]+[flights[-1][1]])
         ax=self.plotBasemap(highlightaps=usedaps,conalpha=0.06,ax=ax)
         for j in range(len(flights)):
-            ap1,ap2,depTime,arrTime,cruiseTime=flights[j]
+            ap1,ap2,depTime,arrTime=flights[j]
             ax.plot([self.ap2loc[ap1][1],self.ap2loc[ap2][1]],[self.ap2loc[ap1][0],self.ap2loc[ap2][0]],"k--",linewidth=4.0,alpha=0.5,zorder=-10)
         return ax            
             
@@ -61,7 +61,7 @@ class Scenario:
                 axs[y][x].set_yticks([])
         for i,(groupname,groupdf) in enumerate(groups):
             ax=axs[i//xpl][i%xpl]
-            flights=[(row.From,row.To,row.SDT,row.SAT,row.Cruise_time) for row in groupdf.itertuples()]
+            flights=[(row.From,row.To,row.SDT,row.SAT) for row in groupdf.itertuples()]
             self.plotTrajectoryOnBasemap(flights,ax)
             ax.set_title("%s: "%entity+groupname)
             
@@ -92,15 +92,19 @@ class Scenario:
         ax.legend(*zip(*unique))
         ax.set_title("%sTrajectoriesAsTimeSpaceNetwork"%entity)
 
-scname="Schedule_ACF5"
-with open(scname+".json", "r") as outfile:
+
+direname="ACF5"
+with open(direname+"/Config.json", "r") as outfile:
     config=json.load(outfile)
 
-dfschedule=pd.read_csv(scname+".csv",na_filter=None)
+dfschedule=pd.read_csv(direname+"/Schedule.csv",na_filter=None)
 usedaps=set(dfschedule["From"].tolist()+dfschedule["To"].tolist())
 S=Scenario(config,usedaps)
 
-S.plotBasemap(conalpha=0.9).set_title("Airports and possible flight connections") # Visualize airports and connectable airport pairs
-S.plotEntityTrajectoriesOnMap(dfschedule,"Crew")
-S.plotEntityTrajectoriesAsTimeSpaceNetwork(dfschedule,"Crew")
+#S.plotBasemap(conalpha=0.9).set_title("Airports and possible flight connections") # Visualize airports and connectable airport pairs
+S.plotEntityTrajectoriesOnMap(dfschedule,"Tail")
+#S.plotEntityTrajectoriesAsTimeSpaceNetwork(dfschedule,"Crew")
+    
+
+
 
