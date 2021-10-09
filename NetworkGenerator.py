@@ -8,17 +8,25 @@ import json
 import os
 
 from NetworkVisualizer import Visualizer
+from util import ArcFeasibilityChecker,CplexHelper,DisruptionHelper
 
 
 class Scenario:
-    def __init__(self,direname):
+    def __init__(self,direname,scname):
         self.direname=direname
-        self.dfschedule=pd.read_csv("Datasets/"+direname+"/Schedule.csv",na_filter=None)
-        self.dfitinerary=pd.read_csv("Datasets/"+direname+"/Itinerary.csv",na_filter=None)
-        self.dfduration=pd.read_csv("Datasets/"+direname+"/Duration.csv",na_filter=None)        
+        self.scname=scname
         with open("Datasets/"+direname+"/Config.json", "r") as outfile:
             self.config=json.load(outfile)
+        with open("Scenarios/"+scname+"/DisruptionScenario.json", "r") as outfile:
+            self.disrution=json.load(outfile)
         
+        drpHelper=DisruptionHelper(self.disrution)
+        dfschedule=pd.read_csv("Datasets/"+direname+"/Schedule.csv",na_filter=None)
+        self.dfschedule=drpHelper.processDisruptionType12(dfschedule)
+        self.dfitinerary=pd.read_csv("Datasets/"+direname+"/Itinerary.csv",na_filter=None)
+        self.dfduration=pd.read_csv("Datasets/"+direname+"/Duration.csv",na_filter=None)
+        
+        self.entityName2delayTime=drpHelper.processDisruptionType3()
         self.flight2dict={dic['Flight']:dic for dic in self.dfschedule.to_dict(orient='record')}
         self.tail2flights={tail:df_cur.sort_values(by='SDT')["Flight"].tolist() for tail,df_cur in self.dfschedule.groupby("Tail")}
         self.crew2flights={crew:df_cur.sort_values(by='SDT')["Flight"].tolist() for crew,df_cur in self.dfschedule.groupby("Crew")}
@@ -27,31 +35,8 @@ class Scenario:
         self.itin2pax={row.Itinerary:row.Pax for row in self.dfitinerary.itertuples()}
         self.type2mincontime={"ACF":self.config["ACMINCONTIME"],"CRW":self.config["CREWMINCONTIME"],"PAX":self.config["PAXMINCONTIME"]}
         self.appair2duration={(row.From,row.To):row.Duration for row in self.dfduration.itertuples()}
+        
         self.FNodes=[Node(self,ntype="FNode",name=flight) for flight in self.flight2dict.keys()]
-        
-        
-class Node:
-    def __init__(self,S,ntype="FNode",name=None,info=None):
-        self.ntype=ntype
-        self.name=name
-        if ntype=="FNode":
-            self.Ori=S.flight2dict[name]["From"]
-            self.Des=S.flight2dict[name]["To"]
-            self.SDT=S.flight2dict[name]["SDT"]
-            self.SAT=S.flight2dict[name]["SAT"]
-            self.SFT=S.flight2dict[name]["Flight_time"]
-            self.LDT=self.SDT+S.config["MAXHOLDTIME"]
-            self.LAT=self.SAT+S.config["MAXHOLDTIME"]
-            self.CrsTimeComp=int(S.flight2dict[name]["Cruise_time"]*S.config["CRSTIMECOMPPCT"]) #TODO: Consider the compression limit by different types of aircraft in the future, and modify EAT
-            self.EDT=self.SDT
-            self.EAT=self.SDT+self.SFT-self.CrsTimeComp
-            self.CT=min(S.type2mincontime.values())
-            self.Demand=0
-            
-        elif ntype=="SNode" or ntype=="TNode":
-            self.Ori,self.Des,self.EAT,self.LDT,self.CT,self.Demand=info
-            self.SDT=self.SAT=self.LAT=self.EDT=self.CrsTimeComp=self.SFT=None
-        #TODO: generate data for schedule maintenance and construct must-nodes 
         
 
 class Entity:
@@ -61,7 +46,7 @@ class Entity:
         self.CT=S.type2mincontime[etype]
         self.Ori=S.flight2dict[self.F[0]]["From"]
         self.Des=S.flight2dict[self.F[-1]]["To"]
-        self.EDT=S.config["STARTTIME"]
+        self.EDT=S.config["STARTTIME"]+self.S.entityName2delayTime.get(name,0)
         self.LAT=S.config["ENDTIME"]
         self.SNode=Node(S,"SNode","S-"+name,(None,self.Ori,self.EDT,None,0,-1))
         self.TNode=Node(S,"TNode","T-"+name,(self.Des,None,None,self.LAT,0,1))
@@ -102,28 +87,35 @@ class Entity:
         vis.plotTrajectoryOnBasemap(visflights,ax)
         ax.set_title(title)
         
-        
-class ArcFeasibilityChecker:
-    def __init__(self,S):
-        self.S=S
+class Node:
+    def __init__(self,S,ntype="FNode",name=None,info=None):
+        self.ntype=ntype
+        self.name=name
+        if ntype=="FNode":
+            self.Ori=S.flight2dict[name]["From"]
+            self.Des=S.flight2dict[name]["To"]
+            self.SDT=S.flight2dict[name]["SDT"]
+            self.SAT=S.flight2dict[name]["SAT"]
+            self.SFT=S.flight2dict[name]["Flight_time"]
+            self.LDT=self.SDT+S.config["MAXHOLDTIME"]
+            self.LAT=self.SAT+S.config["MAXHOLDTIME"]
+            self.CrsTimeComp=int(S.flight2dict[name]["Cruise_time"]*S.config["CRSTIMECOMPPCT"]) #TODO: Consider the compression limit by different types of aircraft in the future, and modify EAT
+            self.EDT=self.SDT
+            self.EAT=self.SDT+self.SFT-self.CrsTimeComp
+            self.CT=min(S.type2mincontime.values())
+            self.Demand=0
+            
+        elif ntype=="SNode" or ntype=="TNode":
+            self.Ori,self.Des,self.EAT,self.LDT,self.CT,self.Demand=info
+            self.SDT=self.SAT=self.LAT=self.EDT=self.CrsTimeComp=self.SFT=None
+        #TODO: generate data for schedule maintenance and construct must-nodes 
     
-    def checkConnectionArc(self,node1,node2):
-        if (node1.ntype,node2.ntype) in [("SNode","FNode"),("FNode","TNode")]:
-            if node1.Des==node2.Ori and node2.LDT>=node1.EAT:
-                return True
-        elif (node1.ntype,node2.ntype)==("FNode","FNode"):
-            if node1.Des==node2.Ori and node2.LDT>=node1.EAT+node1.CT:
-                return True            
-        return False
-        
-    def checkExternalArc(self,node1,node2):
-        if not self.checkConnectionArc(node1,node2) and node1.SAT+self.appair2duration[(node1.Des,node2.Ori)]<=node1.LAT:
-            return True
-        return False
-    
-    
-S=Scenario("ACF5")
+random.seed(0)
+S=Scenario("ACF5","ACF5-SC1")
 checker=ArcFeasibilityChecker(S)
+
+
+
 entity=Entity(S,"T00","ACF",checker)
 entity.PNGA()
 

@@ -1,0 +1,28 @@
+{
+    "FlightDepartureDelay": [
+        [
+            "T00F00",
+            7200
+        ]
+    ],
+    "FlightCancellation": [
+        "T00F01"
+    ],
+    "DelayedReadyTime": [
+        [
+            "C00",
+            3600
+        ],
+        [
+            "T00",
+            3600
+        ]
+    ],
+    "AirportClosure": [
+        [
+            "LAX",
+            28800,
+            54000
+        ]
+    ]
+}

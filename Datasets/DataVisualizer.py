@@ -10,7 +10,7 @@ from matplotlib.colors import Normalize
 import networkx as nx
 import haversine
 
-class Scenario:
+class Dataset:
     def __init__(self,config,usedaps):
         self.config=config
         self.dfairports=pd.read_csv("0_External/OurAirports/airports.csv",na_filter=None)
@@ -99,11 +99,11 @@ with open(direname+"/Config.json", "r") as outfile:
 
 dfschedule=pd.read_csv(direname+"/Schedule.csv",na_filter=None)
 usedaps=set(dfschedule["From"].tolist()+dfschedule["To"].tolist())
-S=Scenario(config,usedaps)
+D=Dataset(config,usedaps)
 
-#S.plotBasemap(conalpha=0.9).set_title("Airports and possible flight connections") # Visualize airports and connectable airport pairs
-S.plotEntityTrajectoriesOnMap(dfschedule,"Tail")
-#S.plotEntityTrajectoriesAsTimeSpaceNetwork(dfschedule,"Crew")
+#D.plotBasemap(conalpha=0.9).set_title("Airports and possible flight connections") # Visualize airports and connectable airport pairs
+D.plotEntityTrajectoriesOnMap(dfschedule,"Tail")
+#D.plotEntityTrajectoriesAsTimeSpaceNetwork(dfschedule,"Crew")
     
 
 

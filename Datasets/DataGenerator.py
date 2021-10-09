@@ -6,7 +6,7 @@ import haversine
 import json
 import os
 
-class Scenario:
+class Dataset:
     def __init__(self,config):
         self.config=config
         self.dfacmodels=pd.read_excel("0_External/FAAAircraftCharacteristicDatabase/AircraftModels.xlsx",na_filter=None).head(config["MAXACT"])
@@ -29,16 +29,16 @@ class Scenario:
         return s
 
 class CrewHelper:
-    def __init__(self,S):
-        self.S=S
+    def __init__(self,D):
+        self.D=D
         self.crewFlights={}
 
     def getAvailableCrew(self,tail,origin,destination,depTime,arrTime):
         for c in self.crewFlights:
             lastFlight=self.crewFlights[c][-1]
-            if lastFlight[1]==origin and lastFlight[3]+self.S.config["CREWMINCONTIME"]<=depTime:
+            if lastFlight[1]==origin and lastFlight[3]+self.D.config["CREWMINCONTIME"]<=depTime:
                 # Check whether to really use the crew
-                if lastFlight[4]!=tail or sum([cf[3]-cf[2] for cf in self.crewFlights[c]])<self.S.config["CREWMAXREPTIME"]:
+                if lastFlight[4]!=tail or sum([cf[3]-cf[2] for cf in self.crewFlights[c]])<self.D.config["CREWMAXREPTIME"]:
                     self.crewFlights[c].append((origin,destination,depTime,arrTime,tail))
                     return c
         # No crew found, create a new one
@@ -47,8 +47,8 @@ class CrewHelper:
         return crewname
     
 class ItineraryHelper:
-    def __init__(self,S):
-        self.S=S
+    def __init__(self,D):
+        self.D=D
         self.itinFlights={}
         self.itinPax={}
         
@@ -56,8 +56,8 @@ class ItineraryHelper:
         leaveall=0
         for it in self.itinFlights.copy():
             lastFlight=self.itinFlights[it][-1]
-            if lastFlight[2]==origin and lastFlight[4]+self.S.config["PAXMINCONTIME"]<=depTime:
-                if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.S.config["DIRECTITINPROB"]:
+            if lastFlight[2]==origin and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime:
+                if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]:
                     newItin="I%02d"%len(self.itinFlights)
                     self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
                     leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
@@ -65,7 +65,7 @@ class ItineraryHelper:
                     self.itinPax[newItin]=leave
                     leaveall+=leave
                     
-                elif len(self.itinFlights[it])>=2 and random.uniform(0,1)>self.S.config["DIRECTITINPROB"]+self.S.config["TWOHOPITINPROB"]:
+                elif len(self.itinFlights[it])>=2 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]+self.D.config["TWOHOPITINPROB"]:
                     newItin="I%02d"%len(self.itinFlights)
                     self.itinFlights[newItin]=self.itinFlights[it]+[(fltname,origin,destination,depTime,arrTime,pax)]
                     leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
@@ -78,43 +78,43 @@ class ItineraryHelper:
         self.itinPax[itin]=pax-leaveall
         
         
-def generateScenario(direname,config,seed=0):
+def generateDataset(direname,config,seed=0):
     random.seed(seed)
-    S=Scenario(config)
-    crewHelper=CrewHelper(S)
-    itinHelper=ItineraryHelper(S)
+    D=Dataset(config)
+    crewHelper=CrewHelper(D)
+    itinHelper=ItineraryHelper(D)
     trajectories=[]
-    for i in range(0,S.config["MAXAC"]):
+    for i in range(0,D.config["MAXAC"]):
         acname="T%02d"%i
-        actyperow=S.dfacmodels.iloc[random.randint(0, len(S.dfacmodels)-1)]
+        actyperow=D.dfacmodels.iloc[random.randint(0, len(D.dfacmodels)-1)]
         flights=[]
         flightind=0
         while True:
             if len(flights)==0:
                 # Start trajectory anywhere randomly
-                origin=S.airports[random.randint(0,len(S.airports)-1)]
-                depTime=S.config["STARTTIME"]+random.randint(30,50)*60
+                origin=D.airports[random.randint(0,len(D.airports)-1)]
+                depTime=D.config["STARTTIME"]+random.randint(30,50)*60
             else:
                 # Start at previous airport with overhead time
                 oldname,oldorigin,olddestination,olddepTime,oldarrTime,oldcruiseTime,oldcrew,olddistance,oldpax=flights[-1]
                 origin=olddestination
-                depTime=oldarrTime+S.config["ACMINCONTIME"]+int(random.uniform(0.0,1.0)*(S.config["ACMAXCONTIME"]-S.config["ACMINCONTIME"]))
+                depTime=oldarrTime+D.config["ACMINCONTIME"]+int(random.uniform(0.0,1.0)*(D.config["ACMAXCONTIME"]-D.config["ACMINCONTIME"]))
     
             if random.uniform(0.0,1.0)<0.3 and len(flights)>=1: #TODO: this needs to be better parameterized in the future! In general, some constant in the range 0.0 (=hub and spoke) and 1.0 (=point-to-point) would be nice.
                 #return to old origin
                 destination=flights[-1][1]
             else:
-                neighbors=list(S.Gconnectable.neighbors(origin))
-                destination=random.choices(population=neighbors,weights=[S.ap2pax[k] for k in neighbors],k=1)[0]
-            distance=int(S.appair2distance[(origin,destination)])
-            flightTime=int(distance*3600/S.config["ACTAVGSPEED"])
+                neighbors=list(D.Gconnectable.neighbors(origin))
+                destination=random.choices(population=neighbors,weights=[D.ap2pax[k] for k in neighbors],k=1)[0]
+            distance=int(D.appair2distance[(origin,destination)])
+            flightTime=int(distance*3600/D.config["ACTAVGSPEED"])
             cruiseTime=max(flightTime-30*60,0)
             arrTime=depTime+flightTime
-            if arrTime>=S.config["ENDTIME"]:
+            if arrTime>=D.config["ENDTIME"]:
                 break
             fltname=acname+"F%02d"%flightind
             flightind+=1
-            pax=int(S.config["LOADFACTOR"]*actyperow.PAX)
+            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
             itin=itinHelper.getAvailableItinerary(fltname,origin,destination,depTime,arrTime,pax)
             flights+=[(fltname,origin,destination,depTime,arrTime,cruiseTime,crew,distance,pax)]
@@ -137,7 +137,7 @@ def generateScenario(direname,config,seed=0):
             resd["Distance"].append(flight[7])
             resd["Capacity"].append(accap)
             resd["Pax"].append(flight[8])
-            resd["Timestring"].append(S.getTimeString(flight[3])+" -> "+S.getTimeString(flight[4]))
+            resd["Timestring"].append(D.getTimeString(flight[3])+" -> "+D.getTimeString(flight[4]))
     
     resditin=defaultdict(list)
     for itin,flights in itinHelper.itinFlights.items():
@@ -146,14 +146,14 @@ def generateScenario(direname,config,seed=0):
         resditin["Pax"].append(itinHelper.itinPax[itin])
     
     resdtime=defaultdict(list)
-    for (ap1,ap2),distance in S.appair2distance.items():
+    for (ap1,ap2),distance in D.appair2distance.items():
         if ap1!=ap2:
-            time=int(distance*3600/S.config["ACTAVGSPEED"])
+            time=int(distance*3600/D.config["ACTAVGSPEED"])
             resdtime["From"].append(ap1)
             resdtime["To"].append(ap2)
             resdtime["Distance"].append(distance)
             resdtime["Duration"].append(time)
-            resdtime["Timestring"].append(S.getTimeString(time))
+            resdtime["Timestring"].append(D.getTimeString(time))
     
     if not os.path.exists(direname):
         os.makedirs(direname)
@@ -181,11 +181,11 @@ config={"MAXAC":5, # Number of aicraft trajectories to generate
         "ENDTIME":26*3600, # stop at 2AM next day
         "DIRECTITINPROB":0.85, # probability of direct itinerary
         "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
-        "CRSTIMECOMPPCT":0.30, # Cruise time compression limit in percentage (Page 6); #TODO: Adapt for different aircraft types in the future
+        "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6); #TODO: Adapt for different aircraft types in the future
         "MAXHOLDTIME":2*3600 # Maximum departure/arrival hold time, corresponding to latest departure and arrival time
         }
 
-generateScenario("ACF%d"%config["MAXAC"],config,seed=0)
+generateDataset("ACF%d"%config["MAXAC"],config,seed=0)
 
 
 
