@@ -47,19 +47,19 @@ class ScenarioGenerator:
             json.dump(self.drptype2data, outfile, indent = 4)
     
 
-direname="ACF5"
+direname="ACF2"
 D=Dataset(direname)
 
 SC0=ScenarioGenerator(direname,"SC0")
 SC0.tojsonfile()
 
-SC1=ScenarioGenerator(direname,"SC1")
-SC1.setFlightDepartureDelay("T00F00",2*3600)
-SC1.setFlightCancellation("T00F01")
-SC1.setDelayedReadyTime("C00",1*3600)
-SC1.setDelayedReadyTime("T00",1*3600)
-SC1.setAirportClosure("LAX",8*3600,15*3600)
-SC1.tojsonfile()
+#SC1=ScenarioGenerator(direname,"SC1")
+#SC1.setFlightDepartureDelay("T00F00",2*3600)
+#SC1.setFlightCancellation("T00F01")
+#SC1.setDelayedReadyTime("C00",1*3600)
+#SC1.setDelayedReadyTime("T00",1*3600)
+#SC1.setAirportClosure("LAX",8*3600,15*3600)
+#SC1.tojsonfile()
         
 
     

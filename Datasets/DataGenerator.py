@@ -165,9 +165,9 @@ def generateDataset(direname,config,seed=0):
         json.dump(config, outfile, indent = 4)
         
         
-config={"MAXAC":5, # Number of aicraft trajectories to generate
-        "MAXACT":5, # Number of unique aircraft types
-        "MAXAPT":12, # Number of airports
+config={"MAXAC":2, # Number of aicraft trajectories to generate
+        "MAXACT":1, # Number of unique aircraft types
+        "MAXAPT":4, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
         "MINFLIGHTDISTANCE":400, # No flights shorter than this distance
         "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
