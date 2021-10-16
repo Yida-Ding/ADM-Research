@@ -6,6 +6,9 @@ import matplotlib.cm as cm
 from matplotlib.colors import Normalize
 import networkx as nx
 import haversine
+import random
+import itertools
+
 
 class Visualizer:
     def __init__(self,direname):
@@ -43,8 +46,9 @@ class Visualizer:
         usedaps=set([f[0] for f in flights]+[flights[-1][1]])
         ax=self.plotBasemap(highlightaps=usedaps,conalpha=0.06,ax=ax)
         for j in range(len(flights)):
-            ap1,ap2=flights[j]
+            ap1,ap2,name=flights[j]
             ax.plot([self.ap2loc[ap1][1],self.ap2loc[ap2][1]],[self.ap2loc[ap1][0],self.ap2loc[ap2][0]],"k--",linewidth=4.0,alpha=0.5,zorder=-10)
+            ax.text(sum([self.ap2loc[ap1][1],self.ap2loc[ap2][1]])/2+random.uniform(0,1),sum([self.ap2loc[ap1][0],self.ap2loc[ap2][0]])/2,name,fontsize=10,ha="center",va="center",bbox=dict(facecolor='orange',alpha=0.9,pad=1.5))
         return ax
     
 
