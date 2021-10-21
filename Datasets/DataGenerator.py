@@ -182,10 +182,19 @@ config={"MAXAC":2, # Number of aicraft trajectories to generate
         "DIRECTITINPROB":0.85, # probability of direct itinerary
         "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
         "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6); #TODO: Adapt for different aircraft types in the future
-        "MAXHOLDTIME":2*3600 # Maximum departure/arrival hold time, corresponding to latest departure and arrival time
+        "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure and arrival time
+        
+        "FLIGHTCANCELCOST":20000, # Flight cancellation cost in dollar in Barnhart paper 
+        "FUELCOSTPERKG":0.478/0.454, # Jet fuel price per kg 
+        "SCHEDULECRUISESPEED":900/3600, # Schedule cruise speed km/s
+        "MAXCRUISESPEED":1.1*900/3600, # Maximum allowable cruise speed km/s
+        "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel Consumption parameters (km,s,kg) in 2014 paper
+        "DELAYCOST":1.0242/60, # Delay cost per passenger per second in Page 22
+        "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams
+        "FOLLOWSCHEDULECOSTPAX":-0.01 # Negative cost to follow schedule arc for passenger
         }
 
-generateDataset("ACF%d"%config["MAXAC"],config,seed=0)
+generateDataset("ACF%d"%config["MAXAC"],config,seed=1)
 
 
 
