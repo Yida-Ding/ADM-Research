@@ -49,7 +49,7 @@ class Analyzer:
                 resd["To"].append(S.flight2dict[flight]["To"])
                 resd["RDT"].append(self.flight2deptime[flight])
                 resd["RAT"].append(self.flight2arrtime[flight])
-                resd["Flight_time"].append(self.flight2deptime[flight]-self.flight2arrtime[flight])
+                resd["Flight_time"].append(self.flight2arrtime[flight]-self.flight2deptime[flight])
                 resd["Cruise_time"].append(self.flight2crstime[flight])
                 resd["Distance"].append(S.flight2dict[flight]["Distance"])
                 resd["Capacity"].append(S.tail2capacity[tail])
@@ -69,25 +69,8 @@ class Analyzer:
         return s
                
 
-
-                
-                
-                
-dire,scen="ACF2","ACF2-SC1"
+dire,scen="ACF2","ACF2-SC0"
 S=Scenario(dire,scen)
 A=Analyzer(S,dire,scen)
 
-
-
-
-#    variabledict=defaultdict(dict)
-#    prefix3=["x_T","x_C","x_I","crt"]
-#    prefix2=["z_","dt","at","y_","v_"]
-#    for name,value in zip(variables,values):
-#        if name[:3] in prefix3:
-#            variabledict[name[:3]][name]=value
-#        elif name[:2] in prefix2:
-#            variabledict[name[:2]][name]=value
-
-        
         

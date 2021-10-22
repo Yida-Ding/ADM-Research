@@ -2,7 +2,7 @@
     "FlightDepartureDelay": [
         [
             "T00F00",
-            3600
+            1800.0
         ]
     ]
 }

@@ -10,7 +10,7 @@ import cplex
 import itertools
 
 from NetworkVisualizer import Visualizer
- 
+
 class Scenario:
     def __init__(self,direname,scname):
         self.direname=direname
@@ -19,15 +19,52 @@ class Scenario:
             self.config=json.load(outfile)
         with open("Scenarios/"+scname+"/DisruptionScenario.json", "r") as outfile:
             self.disruption=json.load(outfile)
-        
         self.dfitinerary=pd.read_csv("Datasets/"+direname+"/Itinerary.csv",na_filter=None)
-        self.dfduration=pd.read_csv("Datasets/"+direname+"/Duration.csv",na_filter=None)
         self.dfschedule=pd.read_csv("Datasets/"+direname+"/Schedule.csv",na_filter=None)
+        
+        #FlightDepartureDelay
+        for flight,delayTime in self.disruption.get("FlightDepartureDelay",[]):
+            self.dfschedule.loc[self.dfschedule['Flight']==flight,["SDT"]]+=delayTime
+            
+        #DelayedReadyTime
+        self.entity2delayTime={name:time for (name,time) in self.disruption.get("DelayedReadyTime",[])}             
+        
+        #Create FNodes
+        self.FNodes=[]
         self.flight2dict={dic['Flight']:dic for dic in self.dfschedule.to_dict(orient='record')}
         self.type2mincontime={"ACF":self.config["ACMINCONTIME"],"CRW":self.config["CREWMINCONTIME"],"PAX":self.config["PAXMINCONTIME"]}
-
-        drpHelper=DisruptionHelper(self,self.dfschedule)
-        self.dfschedule,self.FNodes,self.entity2delayTime=drpHelper.processDisruption(self.disruption)
+        orig2FNode,dest2FNode=defaultdict(list),defaultdict(list)
+        for flight in self.dfschedule["Flight"].tolist():
+            node=Node(self,ntype="FNode",name=flight)
+            self.FNodes.append(node)
+            orig2FNode[node.Ori].append(node)
+            dest2FNode[node.Des].append(node)
+            
+        #AirportClosure
+        cancelFlights=set()
+        for ap,startTime,endTime in self.disruption.get("AirportClosure",[]):
+            for node in orig2FNode.get(ap,[]):
+                if node.SDT>startTime and node.LDT<endTime:
+                    cancelFlights.add(node.name)
+                elif node.SDT<startTime and node.LDT>startTime:
+                    node.LDT=startTime
+                elif node.SDT<endTime and node.LDT>endTime:
+                    node.SDT=endTime
+            for node in dest2FNode.get(ap,[]):
+                if node.EAT>startTime and node.LAT<endTime:
+                    cancelFlights.add(node.name)
+                elif node.EAT<startTime and node.LAT>startTime:
+                    node.LAT=startTime
+                elif node.EAT<endTime and node.LAT>endTime:
+                    node.EAT=endTime
+        
+        #FlightCancellation
+        cancelFlights=cancelFlights|set(self.disruption.get("FlightCancellation",[]))
+        self.FNodes=[node for node in self.FNodes if node.name not in cancelFlights]
+        self.dfschedule.drop(self.dfschedule[self.dfschedule.Flight.isin(cancelFlights)].index,inplace=True)
+        for index,row in self.dfitinerary.iterrows():
+            if set(row['Flight_legs'].split('-'))&cancelFlights!=set():
+                self.dfitinerary.drop(index,inplace=True)
         
         self.name2FNode={node.name:node for node in self.FNodes}
         self.tail2flights={tail:df_cur.sort_values(by='SDT')["Flight"].tolist() for tail,df_cur in self.dfschedule.groupby("Tail")}
@@ -38,14 +75,13 @@ class Scenario:
         self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,"PAX":self.pax2flights}
         self.itin2pax={row.Itinerary:row.Pax for row in self.dfitinerary.itertuples()}
         self.itin2destination={itin:self.name2FNode[self.itin2flights[itin][-1]].Des for itin in self.itin2flights.keys()}
-        self.appair2duration={(row.From,row.To):row.Duration for row in self.dfduration.itertuples()}
         self.tail2capacity={tail:df_cur["Capacity"].tolist()[0] for tail,df_cur in self.dfschedule.groupby("Tail")}
         self.checker=ArcFeasibilityChecker(self)
         
         self.problem=cplex.Cplex()
         self.problem.objective.set_sense(self.problem.objective.sense.minimize)
-
-
+        
+        
 class Node:
     def __init__(self,S,ntype="FNode",name=None,info=None):
         self.ntype=ntype
@@ -58,18 +94,21 @@ class Node:
             self.SFT=S.flight2dict[name]["Flight_time"]
             self.LDT=self.SDT+S.config["MAXHOLDTIME"]
             self.LAT=self.SAT+S.config["MAXHOLDTIME"]
-            self.CrsTimeComp=int(S.flight2dict[name]["Cruise_time"]*S.config["CRSTIMECOMPPCT"]) #TODO: Consider the compression limit by different types of aircraft in the future, and modify EAT
+            self.ScheCrsTime=S.flight2dict[name]["Cruise_time"]
+            self.CrsTimeComp=int(self.ScheCrsTime*S.config["CRSTIMECOMPPCT"])
             self.EDT=self.SDT
             self.EAT=self.SDT+self.SFT-self.CrsTimeComp
             self.CT=min(S.type2mincontime.values())
+            self.CrsStageDistance=S.flight2dict[name]["Distance"]*S.config["CRUISESTAGEDISTPCT"]
+            self.ScheCrsSpeed=self.CrsStageDistance/S.flight2dict[name]["Cruise_time"]
+            self.MaxCrsSpeed=self.CrsStageDistance/(S.flight2dict[name]["Cruise_time"]-self.CrsTimeComp)
             self.Demand=0
             
         elif ntype=="SNode" or ntype=="TNode":
             self.Ori,self.Des,self.EAT,self.LDT,self.CT,self.Demand=info
             self.SDT=self.SAT=self.LAT=self.EDT=self.CrsTimeComp=self.SFT=None
-        #TODO: generate data for schedule maintenance and construct must-nodes       
-        
-        
+
+
 class Entity:
     def __init__(self,S,name,etype):
         self.S=S
@@ -120,47 +159,6 @@ class Entity:
         vis.plotTrajectoryOnBasemap(flights,ax)
         ax.set_title(title)        
         
-        
-        
-class DisruptionHelper:
-    def __init__(self,S,dfschedule):
-        self.S=S
-        self.dfschedule=dfschedule
-
-    def processDisruption(self,disruption):
-        #FlightDepartureDelay,FlightCancellation,DelayedReadyTime
-        for flight,delayTime in disruption.get("FlightDepartureDelay",[]):
-            self.dfschedule.loc[self.dfschedule['Flight']==flight,["SDT"]]+=delayTime
-        self.dfschedule.drop(self.dfschedule[self.dfschedule.Flight.isin(disruption.get("FlightCancellation",[]))].index,inplace=True)
-        entity2delayTime={name:time for (name,time) in disruption.get("DelayedReadyTime",[])}        
-        
-        #AirportClosure
-        FNodes=[]
-        orig2FNode,dest2FNode=defaultdict(list),defaultdict(list)
-        for flight in self.dfschedule["Flight"].tolist():
-            node=Node(self.S,ntype="FNode",name=flight)
-            FNodes.append(node)
-            orig2FNode[node.Ori].append(node)
-            dest2FNode[node.Des].append(node)
-                    
-        for ap,startTime,endTime in disruption.get("AirportClosure",[]):
-            for node in orig2FNode.get(ap,[]):
-                if node.SDT>startTime and node.LDT<endTime:
-                    self.dfschedule.drop(self.dfschedule[self.dfschedule.Flight==node.name].index,inplace=True)
-                    FNodes.remove(node)
-                elif node.SDT<startTime and node.LDT>startTime:
-                    node.LDT=startTime
-                elif node.SDT<endTime and node.LDT>endTime:
-                    node.SDT=endTime
-            for node in dest2FNode.get(ap,[]):
-                if node.EAT>startTime and node.LAT<endTime:
-                    self.dfschedule.drop(self.dfschedule[self.dfschedule.Flight==node.name].index,inplace=True)
-                    FNodes.remove(node)
-                elif node.EAT<startTime and node.LAT>startTime:
-                    node.LAT=startTime
-                elif node.EAT<endTime and node.LAT>endTime:
-                    node.EAT=endTime
-        return self.dfschedule,FNodes,entity2delayTime
     
     
 class ArcFeasibilityChecker:
@@ -176,7 +174,3 @@ class ArcFeasibilityChecker:
             return True            
         return False
         
-    def checkExternalArc(self,node1,node2):
-        if not self.checkConnectionArc(node1,node2) and node1.SAT+self.appair2duration[(node1.Des,node2.Ori)]<=node1.LAT:
-            return True
-        return False

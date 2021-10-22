@@ -49,13 +49,14 @@ class ScenarioGenerator:
 
 direname="ACF2"
 D=Dataset(direname)
-
-#SC0=ScenarioGenerator(direname,"SC0")
-#SC0.tojsonfile()
+SC0=ScenarioGenerator(direname,"SC0")
+SC0.tojsonfile()
 
 SC1=ScenarioGenerator(direname,"SC1")
-SC1.setFlightDepartureDelay("T00F00",1*3600)
+SC1.setFlightDepartureDelay("T00F00",0.5*3600)
 SC1.tojsonfile()
+
+
         
 
     

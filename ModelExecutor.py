@@ -9,16 +9,6 @@ import os
 from ModelGenerator import MIPModel
 from NetworkGenerator import Scenario,Entity
 
-#def plotarc(E):
-#    print(E.name)
-#    print(E.ArcSet)
-#    print(E.flightPath)
-#    fig,axes=plt.subplots(3,3,figsize=(15,10),dpi=100)
-#    selpaths=random.sample(E.flightPath,min(len(E.flightPath),9))
-#    for i,ax in enumerate(axes.flat[:len(selpaths)]):
-#        E.plotPathOnBaseMap(selpaths[i],ax,"Path%d"%i)
-#    plt.suptitle(E.string,fontsize=20)
-    
 
 def executeModel(dataset,scenario):
     S=Scenario(dataset,scenario)
@@ -30,7 +20,7 @@ def executeModel(dataset,scenario):
     model=MIPModel(S,type2entity)
     model.setFlowBalanceConstraint()
     model.setNodeClosureConstraint()
-    model.setFlightTimeConstraint
+    model.setFlightTimeConstraint()
     model.setSourceArcConstraint()
     model.setSinkArcConstraint()
     model.setIntermediateArcConstraint()
@@ -56,7 +46,7 @@ def executeModel(dataset,scenario):
         json.dump(variable2value,outfile,indent=4)
 
 
-executeModel("ACF2","ACF2-SC1")
+executeModel("ACF2","ACF2-SC0")
 
 
 
