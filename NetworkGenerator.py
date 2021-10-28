@@ -8,6 +8,7 @@ import json
 import os
 import cplex
 import itertools
+import time
 
 from NetworkVisualizer import Visualizer
 
@@ -76,12 +77,14 @@ class Scenario:
         self.itin2pax={row.Itinerary:row.Pax for row in self.dfitinerary.itertuples()}
         self.itin2destination={itin:self.name2FNode[self.itin2flights[itin][-1]].Des for itin in self.itin2flights.keys()}
         self.tail2capacity={tail:df_cur["Capacity"].tolist()[0] for tail,df_cur in self.dfschedule.groupby("Tail")}
-        self.checker=ArcFeasibilityChecker(self)
         
-        self.problem=cplex.Cplex()
-        self.problem.objective.set_sense(self.problem.objective.sense.minimize)
-        
-        
+        #Generate connectable digraph for flight nodes
+        self.connectableGraph=nx.DiGraph()
+        for node1 in self.FNodes:
+            for node2 in self.FNodes:
+                if node1.Des==node2.Ori and node2.LDT>=node1.EAT+node1.CT:
+                    self.connectableGraph.add_edge(node1,node2)
+                
 class Node:
     def __init__(self,S,ntype="FNode",name=None,info=None):
         self.ntype=ntype
@@ -108,7 +111,6 @@ class Node:
             self.Ori,self.Des,self.EAT,self.LDT,self.CT,self.Demand=info
             self.SDT=self.SAT=self.LAT=self.EDT=self.CrsTimeComp=self.SFT=None
 
-
 class Entity:
     def __init__(self,S,name,etype):
         self.S=S
@@ -122,55 +124,61 @@ class Entity:
         self.LAT=S.config["ENDTIME"]
         self.SNode=Node(S,"SNode","S-"+name,(None,self.Ori,self.EDT,None,0,-1))
         self.TNode=Node(S,"TNode","T-"+name,(self.Des,None,None,self.LAT,0,1))
-        self.name2Node=self.S.name2FNode.copy()
+        self.name2Node=S.name2FNode.copy()
         self.name2Node.update({"S-"+name:self.SNode,"T-"+name:self.TNode})
-        self.string="Type: %s | ID: %s | OD: %s --> %s"%(etype,name,self.Ori,self.Des)
-        self.flightPath=[]
+        
+        self.connectableGraph=S.connectableGraph.copy()
+        for FNode in S.connectableGraph:
+            if self.SNode.Des==FNode.Ori and FNode.LDT>=self.SNode.EAT:
+                self.connectableGraph.add_edge(self.SNode,FNode)
+            if FNode.Des==self.TNode.Ori and self.TNode.LDT>=FNode.EAT:
+                self.connectableGraph.add_edge(FNode,self.TNode)
+        
+        self.graph=nx.DiGraph()
         self.PNGA()
-        self.graph=nx.DiGraph(self.ArcSet)
         
     def PNGA(self):
-        self.NodeSet,self.ArcSet=set(),set()
         tempPath=[self.SNode]
-        self.generatePath(tempPath)        
+        self.generatePath(tempPath)
         
     def generatePath(self,tempPath):
         lastNode=tempPath[-1]
-        nextNodes=[node for node in self.S.FNodes if self.S.checker.checkConnectionArc(lastNode,node,tempPath)]
-        for nextNode in nextNodes:
-            tempPathc=tempPath.copy()+[nextNode]
-            if nextNode in self.NodeSet:
-                self.insert(tempPathc)
-            else:
-                if nextNode.Des==self.Des:
-                    self.insert(tempPathc+[self.TNode])
-                self.generatePath(tempPathc)
-                    
-    def insert(self,tempPath):
-        namePath=[node.name for node in tempPath]
-        self.NodeSet=self.NodeSet|set(namePath)
-        for i in range(len(tempPath)-1):
-            self.ArcSet=self.ArcSet|{(tempPath[i].name,tempPath[i+1].name)}
-        self.flightPath+=[namePath]
+        if self.etype=="PAX" and lastNode.Des==self.Des:
+            return
         
+        for nextNode in self.connectableGraph.successors(lastNode):
+            if nextNode not in tempPath:
+                tempPathc=tempPath.copy()+[nextNode]
+                if nextNode in self.graph.nodes:
+                    nx.add_path(self.graph,tempPathc)
+                else:
+                    if nextNode.Des==self.Des:
+                        nx.add_path(self.graph,tempPathc+[self.TNode])
+                    self.generatePath(tempPathc)
+    
     def plotPathOnBaseMap(self,path,ax,title):
+        self.string="Type: %s | ID: %s | OD: %s --> %s"%(etype,name,self.Ori,self.Des)
         vis=Visualizer(self.S.direname)
         flights=[(S.flight2dict[flight]["From"],S.flight2dict[flight]["To"],flight) for flight in path[1:-1]]
         vis.plotTrajectoryOnBasemap(flights,ax)
         ax.set_title(title)        
-        
-    
-    
-class ArcFeasibilityChecker:
-    def __init__(self,S):
-        self.S=S
-    
-    def checkConnectionArc(self,node1,node2,tempPath):
-        if node2 in tempPath:
-            return False
-        elif (node1.ntype,node2.ntype) in [("SNode","FNode"),("FNode","TNode")] and node1.Des==node2.Ori and node2.LDT>=node1.EAT:
-            return True
-        elif (node1.ntype,node2.ntype)==("FNode","FNode") and node1.Des==node2.Ori and node2.LDT>=node1.EAT+node1.CT:
-            return True            
-        return False
-        
+
+
+#dataset="ACF10"
+#S=Scenario(dataset,dataset+"-SC0")
+#E=Entity(S,"T00","ACF")
+#print(E.nodeSet)
+
+
+#t1=time.time()
+#type2entity["ACF"]=[Entity(S,tname,"ACF") for tname in S.tail2flights]
+#type2entity["CRW"]=[Entity(S,cname,"CRW") for cname in S.crew2flights]
+#type2entity["PAX"]=[Entity(S,pname,"PAX") for pname in S.pax2flights]
+#t2=time.time()
+#
+#print(type2entity["PAX"][0].graph)
+#print(t2-t1)
+
+
+
+

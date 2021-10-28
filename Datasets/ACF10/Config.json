@@ -1,5 +1,5 @@
 {
-    "MAXAC": 2,
+    "MAXAC": 10,
     "MAXACT": 1,
     "MAXAPT": 6,
     "LOADFACTOR": 0.8,

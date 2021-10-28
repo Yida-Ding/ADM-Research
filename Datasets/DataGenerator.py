@@ -5,6 +5,7 @@ import pandas as pd
 import haversine
 import json
 import os
+import sys
 
 class Dataset:
     def __init__(self,config):
@@ -56,7 +57,7 @@ class ItineraryHelper:
         leaveall=0
         for it in self.itinFlights.copy():
             lastFlight=self.itinFlights[it][-1]
-            if lastFlight[2]==origin and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime:
+            if lastFlight[2]==origin and self.itinFlights[it][0][1]!=destination and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime:
                 if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]:
                     newItin="I%02d"%len(self.itinFlights)
                     self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
@@ -114,12 +115,12 @@ def generateDataset(direname,config,seed=0):
                 break
             fltname=acname+"F%02d"%flightind
             flightind+=1
-            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)
+            pax=int(D.config["LOADFACTOR"]*actyperow.PAX//10) #TODO: scale by 10
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
             itin=itinHelper.getAvailableItinerary(fltname,origin,destination,depTime,arrTime,pax)
             flights+=[(fltname,origin,destination,depTime,arrTime,cruiseTime,crew,distance,pax)]
         
-        trajectories.append((acname,actyperow.Model,actyperow.PAX,flights))
+        trajectories.append((acname,actyperow.Model,actyperow.PAX//10,flights)) #TODO: scale by 10
         
     resd=defaultdict(list)
     for trajectory in trajectories:
@@ -163,11 +164,10 @@ def generateDataset(direname,config,seed=0):
     
     with open(direname+"/Config.json", "w") as outfile:
         json.dump(config, outfile, indent = 4)
-        
-        
-config={"MAXAC":2, # Number of aicraft trajectories to generate
+            
+config={"MAXAC":10, # Number of aicraft trajectories to generate
         "MAXACT":1, # Number of unique aircraft types
-        "MAXAPT":4, # Number of airports
+        "MAXAPT":6, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
         "MINFLIGHTDISTANCE":400, # No flights shorter than this distance
         "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
@@ -193,7 +193,7 @@ config={"MAXAC":2, # Number of aicraft trajectories to generate
         "FOLLOWSCHEDULECOSTPAX":-0.01 # Negative cost to follow schedule arc for passenger on page 15
         }
 
-generateDataset("ACF%d"%config["MAXAC"],config,seed=1)
+generateDataset("ACF%d"%config["MAXAC"],config,seed=12)
 
 
 

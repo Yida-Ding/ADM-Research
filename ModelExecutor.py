@@ -30,24 +30,26 @@ def executeModel(dataset,scenario):
     model.addFlightCancellationCost()
     model.addFuelCost()
     model.addActualDelayCost()
-#    model.addFollowScheduleCost()
-    S.problem.solve()
+    model.addFollowScheduleCost()
+    
+    model.problem.parameters.timelimit.set(120)
+    model.solveProblem()
     
     if not os.path.exists("Results"):
         os.makedirs("Results")
     if not os.path.exists("Results/%s"%scenario):
         os.makedirs("Results/%s"%scenario)
-    S.problem.solution.write("Results/%s/ModelSolution.sol"%scenario)
-    
-    variables=S.problem.variables.get_names()
-    values=S.problem.solution.get_values()
+        
+    model.problem.solution.write("Results/%s/ModelSolution.sol"%scenario)
+    variables=model.problem.variables.get_names()
+    values=model.problem.solution.get_values()
     variable2value={variables[i]:values[i] for i in range(len(values))}
     with open("Results/%s/Variables.json"%scenario,"w") as outfile:
         json.dump(variable2value,outfile,indent=4)
+    
 
-
-executeModel("ACF2","ACF2-SC0")
-
-
+for i in [2,5,10]:
+    head="ACF%d"%i
+    executeModel(head,head+"-SC0")
 
 

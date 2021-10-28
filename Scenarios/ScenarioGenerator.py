@@ -46,17 +46,11 @@ class ScenarioGenerator:
         with open("%s-%s"%(self.direname,self.scname)+"/DisruptionScenario.json", "w") as outfile:
             json.dump(self.drptype2data, outfile, indent = 4)
     
+for i in [2,5,10]:
+    direname="ACF%d"%i
+    D=Dataset(direname)
+    SC0=ScenarioGenerator(direname,"SC0")
+    SC0.tojsonfile()
 
-direname="ACF2"
-D=Dataset(direname)
-SC0=ScenarioGenerator(direname,"SC0")
-SC0.tojsonfile()
-
-SC1=ScenarioGenerator(direname,"SC1")
-SC1.setFlightDepartureDelay("T00F00",0.5*3600)
-SC1.tojsonfile()
-
-
-        
 
     
