@@ -15,7 +15,7 @@ def executeModel(dataset,scenario):
     type2entity={}
     type2entity["ACF"]=[Entity(S,tname,"ACF") for tname in S.tail2flights]
     type2entity["CRW"]=[Entity(S,cname,"CRW") for cname in S.crew2flights]
-    type2entity["PAX"]=[Entity(S,pname,"PAX") for pname in S.pax2flights]
+    type2entity["PAX"]=[Entity(S,pname,"PAX") for pname in S.paxname2flights]
     
     model=MIPModel(S,type2entity)
     model.setFlowBalanceConstraint()
@@ -31,8 +31,8 @@ def executeModel(dataset,scenario):
     model.addFuelCost()
     model.addActualDelayCost()
     model.addFollowScheduleCost()
-    
-    model.problem.parameters.timelimit.set(120)
+        
+    model.problem.parameters.timelimit.set(60)
     model.solveProblem()
     
     if not os.path.exists("Results"):
@@ -48,8 +48,7 @@ def executeModel(dataset,scenario):
         json.dump(variable2value,outfile,indent=4)
     
 
-for i in [2,5,10]:
-    head="ACF%d"%i
-    executeModel(head,head+"-SC0")
+head="ACF2"
+executeModel(head,head+"-SC1")
 
 

@@ -85,11 +85,11 @@ def generateDataset(direname,config,seed=0):
     crewHelper=CrewHelper(D)
     itinHelper=ItineraryHelper(D)
     trajectories=[]
+    flightind=0
     for i in range(0,D.config["MAXAC"]):
         acname="T%02d"%i
         actyperow=D.dfacmodels.iloc[random.randint(0, len(D.dfacmodels)-1)]
         flights=[]
-        flightind=0
         while True:
             if len(flights)==0:
                 # Start trajectory anywhere randomly
@@ -113,7 +113,7 @@ def generateDataset(direname,config,seed=0):
             arrTime=depTime+flightTime
             if arrTime>=D.config["ENDTIME"]:
                 break
-            fltname=acname+"F%02d"%flightind
+            fltname="F%02d"%flightind
             flightind+=1
             pax=int(D.config["LOADFACTOR"]*actyperow.PAX//10) #TODO: scale by 10
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
@@ -141,10 +141,17 @@ def generateDataset(direname,config,seed=0):
             resd["Timestring"].append(D.getTimeString(flight[3])+" -> "+D.getTimeString(flight[4]))
     
     resditin=defaultdict(list)
+    resdpax=defaultdict(list)
     for itin,flights in itinHelper.itinFlights.items():
+        numPax=itinHelper.itinPax[itin]
+        flightNames=[flight[0] for flight in flights]
         resditin["Itinerary"].append(itin)
-        resditin["Flight_legs"].append("-".join([flight[0] for flight in flights]))
-        resditin["Pax"].append(itinHelper.itinPax[itin])
+        resditin["Flight_legs"].append("-".join(flightNames))
+        resditin["Pax"].append(numPax)
+        for i in range(numPax):
+            resdpax["Pax"].append(itin+"P%02d"%i)
+            resdpax["Itinerary"].append(itin)
+            resdpax["Flights"].append("-".join(flightNames))
     
     resdtime=defaultdict(list)
     for (ap1,ap2),distance in D.appair2distance.items():
@@ -161,13 +168,14 @@ def generateDataset(direname,config,seed=0):
     pd.DataFrame(resd).to_csv(direname+"/Schedule.csv",index=False)
     pd.DataFrame(resditin).to_csv(direname+"/Itinerary.csv",index=False)
     pd.DataFrame(resdtime).to_csv(direname+"/Duration.csv",index=False)
+    pd.DataFrame(resdpax).to_csv(direname+"/Passenger.csv",index=False)
     
     with open(direname+"/Config.json", "w") as outfile:
         json.dump(config, outfile, indent = 4)
-            
-config={"MAXAC":10, # Number of aicraft trajectories to generate
+
+config={"MAXAC":2, # Number of aicraft trajectories to generate
         "MAXACT":1, # Number of unique aircraft types
-        "MAXAPT":6, # Number of airports
+        "MAXAPT":3, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
         "MINFLIGHTDISTANCE":400, # No flights shorter than this distance
         "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
@@ -193,7 +201,7 @@ config={"MAXAC":10, # Number of aicraft trajectories to generate
         "FOLLOWSCHEDULECOSTPAX":-0.01 # Negative cost to follow schedule arc for passenger on page 15
         }
 
-generateDataset("ACF%d"%config["MAXAC"],config,seed=12)
-
+generateDataset("ACF%d"%config["MAXAC"],config,seed=0)
+    
 
 

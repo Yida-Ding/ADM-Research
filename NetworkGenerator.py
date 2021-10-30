@@ -16,75 +16,50 @@ class Scenario:
     def __init__(self,direname,scname):
         self.direname=direname
         self.scname=scname
+        #load from Dataset
         with open("Datasets/"+direname+"/Config.json", "r") as outfile:
             self.config=json.load(outfile)
-        with open("Scenarios/"+scname+"/DisruptionScenario.json", "r") as outfile:
-            self.disruption=json.load(outfile)
         self.dfitinerary=pd.read_csv("Datasets/"+direname+"/Itinerary.csv",na_filter=None)
         self.dfschedule=pd.read_csv("Datasets/"+direname+"/Schedule.csv",na_filter=None)
+        self.dfpassenger=pd.read_csv("Datasets/"+direname+"/Passenger.csv",na_filter=None)
         
-        #FlightDepartureDelay
-        for flight,delayTime in self.disruption.get("FlightDepartureDelay",[]):
-            self.dfschedule.loc[self.dfschedule['Flight']==flight,["SDT"]]+=delayTime
-            
-        #DelayedReadyTime
-        self.entity2delayTime={name:time for (name,time) in self.disruption.get("DelayedReadyTime",[])}             
-        
+        #load from Scenario
+        self.dfdrpschedule=pd.read_csv("Scenarios/"+scname+"/DrpSchedule.csv",na_filter=None)
+        with open("Scenarios/"+scname+"/DelayedReadyTime.json", "r") as outfile:
+            self.entity2delayTime=json.load(outfile)
+                
         #Create FNodes
-        self.FNodes=[]
-        self.flight2dict={dic['Flight']:dic for dic in self.dfschedule.to_dict(orient='record')}
+        self.flight2dict={dic['Flight']:dic for dic in self.dfdrpschedule.to_dict(orient='record')}
         self.type2mincontime={"ACF":self.config["ACMINCONTIME"],"CRW":self.config["CREWMINCONTIME"],"PAX":self.config["PAXMINCONTIME"]}
-        orig2FNode,dest2FNode=defaultdict(list),defaultdict(list)
-        for flight in self.dfschedule["Flight"].tolist():
-            node=Node(self,ntype="FNode",name=flight)
-            self.FNodes.append(node)
-            orig2FNode[node.Ori].append(node)
-            dest2FNode[node.Des].append(node)
+        self.FNodes=[Node(self,ntype="FNode",name=flight) for flight in self.dfdrpschedule["Flight"].tolist()]
+        self.flight2scheduleAT={row.Flight:row.SAT for row in self.dfschedule.itertuples()}
+        self.flight2scheduleDT={row.Flight:row.SDT for row in self.dfschedule.itertuples()}
             
-        #AirportClosure
-        cancelFlights=set()
-        for ap,startTime,endTime in self.disruption.get("AirportClosure",[]):
-            for node in orig2FNode.get(ap,[]):
-                if node.SDT>startTime and node.LDT<endTime:
-                    cancelFlights.add(node.name)
-                elif node.SDT<startTime and node.LDT>startTime:
-                    node.LDT=startTime
-                elif node.SDT<endTime and node.LDT>endTime:
-                    node.SDT=endTime
-            for node in dest2FNode.get(ap,[]):
-                if node.EAT>startTime and node.LAT<endTime:
-                    cancelFlights.add(node.name)
-                elif node.EAT<startTime and node.LAT>startTime:
-                    node.LAT=startTime
-                elif node.EAT<endTime and node.LAT>endTime:
-                    node.EAT=endTime
-        
-        #FlightCancellation
-        cancelFlights=cancelFlights|set(self.disruption.get("FlightCancellation",[]))
-        self.FNodes=[node for node in self.FNodes if node.name not in cancelFlights]
-        self.dfschedule.drop(self.dfschedule[self.dfschedule.Flight.isin(cancelFlights)].index,inplace=True)
-        for index,row in self.dfitinerary.iterrows():
-            if set(row['Flight_legs'].split('-'))&cancelFlights!=set():
-                self.dfitinerary.drop(index,inplace=True)
-        
         self.name2FNode={node.name:node for node in self.FNodes}
-        self.tail2flights={tail:df_cur.sort_values(by='SDT')["Flight"].tolist() for tail,df_cur in self.dfschedule.groupby("Tail")}
-        self.crew2flights={crew:df_cur.sort_values(by='SDT')["Flight"].tolist() for crew,df_cur in self.dfschedule.groupby("Crew")}
+        self.tail2flights={tail:df_cur.sort_values(by='SDT')["Flight"].tolist() for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
+        self.crew2flights={crew:df_cur.sort_values(by='SDT')["Flight"].tolist() for crew,df_cur in self.dfdrpschedule.groupby("Crew")}
         self.itin2flights={row.Itinerary:row.Flight_legs.split('-') for row in self.dfitinerary.itertuples()}
-        self.pax2flights={row.Itinerary+"P%02d"%i:row.Flight_legs.split('-') for row in self.dfitinerary.itertuples() for i in range(row.Pax)}
         
-        self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,"PAX":self.pax2flights}
+        self.paxname2flights,self.paxname2itin,self.flight2paxnames={},{},defaultdict(list)
+        for row in self.dfpassenger.itertuples():
+            flights=row.Flights.split('-')
+            self.paxname2flights[row.Pax]=flights
+            self.paxname2itin[row.Pax]=row.Itinerary
+            for flight in flights:
+                self.flight2paxnames[flight].append(row.Pax)
+        
         self.itin2pax={row.Itinerary:row.Pax for row in self.dfitinerary.itertuples()}
         self.itin2destination={itin:self.name2FNode[self.itin2flights[itin][-1]].Des for itin in self.itin2flights.keys()}
-        self.tail2capacity={tail:df_cur["Capacity"].tolist()[0] for tail,df_cur in self.dfschedule.groupby("Tail")}
-        
+        self.tail2capacity={tail:df_cur["Capacity"].tolist()[0] for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
+        self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,"PAX":self.paxname2flights}
+
         #Generate connectable digraph for flight nodes
         self.connectableGraph=nx.DiGraph()
         for node1 in self.FNodes:
             for node2 in self.FNodes:
                 if node1.Des==node2.Ori and node2.LDT>=node1.EAT+node1.CT:
                     self.connectableGraph.add_edge(node1,node2)
-                
+        
 class Node:
     def __init__(self,S,ntype="FNode",name=None,info=None):
         self.ntype=ntype
@@ -105,6 +80,7 @@ class Node:
             self.CrsStageDistance=S.flight2dict[name]["Distance"]*S.config["CRUISESTAGEDISTPCT"]
             self.ScheCrsSpeed=self.CrsStageDistance/S.flight2dict[name]["Cruise_time"]
             self.MaxCrsSpeed=self.CrsStageDistance/(S.flight2dict[name]["Cruise_time"]-self.CrsTimeComp)
+            self.ScheFuelConsump=self.CrsStageDistance*(sum([S.config["FUELCONSUMPPARA"][i]*[(self.ScheCrsSpeed)**2,self.ScheCrsSpeed,(self.ScheCrsSpeed)**(-2),(self.ScheCrsSpeed)**(-3)][i] for i in range(4)]))
             self.Demand=0
             
         elif ntype=="SNode" or ntype=="TNode":
@@ -120,8 +96,13 @@ class Entity:
         self.CT=S.type2mincontime[etype]
         self.Ori=S.flight2dict[self.F[0]]["From"]
         self.Des=S.flight2dict[self.F[-1]]["To"]
-        self.EDT=S.config["STARTTIME"]+self.S.entity2delayTime.get(name,0)
         self.LAT=S.config["ENDTIME"]
+        if etype!="PAX":
+            self.EDT=S.config["STARTTIME"]+self.S.entity2delayTime.get(name,0) #ready time of crew or aircraft
+        else:
+            self.EDT=S.flight2scheduleDT[self.F[0]] #ready time of passenger
+            self.scheduleAT=S.flight2scheduleAT[self.F[-1]]
+        
         self.SNode=Node(S,"SNode","S-"+name,(None,self.Ori,self.EDT,None,0,-1))
         self.TNode=Node(S,"TNode","T-"+name,(self.Des,None,None,self.LAT,0,1))
         self.name2Node=S.name2FNode.copy()
@@ -163,21 +144,21 @@ class Entity:
         vis.plotTrajectoryOnBasemap(flights,ax)
         ax.set_title(title)        
 
+#dataset="ACF2"
+#S=Scenario(dataset,dataset+"-SC1")
+#print(S.dfschedule)
+#print(S.name2FNode.keys())
+#print(S.dfitinerary)
+#print(S.flight2dict)
 
-#dataset="ACF10"
-#S=Scenario(dataset,dataset+"-SC0")
-#E=Entity(S,"T00","ACF")
-#print(E.nodeSet)
-
-
-#t1=time.time()
 #type2entity["ACF"]=[Entity(S,tname,"ACF") for tname in S.tail2flights]
 #type2entity["CRW"]=[Entity(S,cname,"CRW") for cname in S.crew2flights]
-#type2entity["PAX"]=[Entity(S,pname,"PAX") for pname in S.pax2flights]
-#t2=time.time()
+#type2entity["PAX"]=[Entity(S,pname,"PAX") for pname in S.paxname2flights]
+
+#print(S.tail2flights)
+#print(S.crew2flights)
+#print(S.paxname2flights)
 #
-#print(type2entity["PAX"][0].graph)
-#print(t2-t1)
 
 
 

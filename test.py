@@ -1,9 +1,15 @@
-import networkx as nx
+import xml.etree.ElementTree as ET
+from lxml import etree
+import json
+
+d={'string':2}
+res=json.dumps(d)
+print(res)
 
 
 
-G = nx.Graph()
-nx.add_path(G, [0, 1, 2, 3])
-nx.add_path(G, [10, 11, 12])
-print(G.nodes)
-G.add_edge()
+
+
+
+
+

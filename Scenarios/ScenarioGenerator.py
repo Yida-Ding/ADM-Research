@@ -25,32 +25,32 @@ class ScenarioGenerator:
         self.direname=direname
         self.scname=scname
         self.D=Dataset(direname)
-        self.drptype2data=defaultdict(list)
-        self.drptypes=["FlightDepartureDelay","FlightCancellation","DelayedReadyTime","AirportClosure"]
-    
-    def setFlightDepartureDelay(self,flightName,delayTime):
-        self.drptype2data[self.drptypes[0]].append((flightName,delayTime))
-    
-    def setFlightCancellation(self,flightName):
-        self.drptype2data[self.drptypes[1]].append(flightName)
-    
-    def setDelayedReadyTime(self,entityName,delayTime):
-        self.drptype2data[self.drptypes[2]].append((entityName,delayTime))
-    
-    def setAirportClosure(self,airport,startTime,endTime):
-        self.drptype2data[self.drptypes[3]].append((airport,startTime,endTime))
-        
-    def tojsonfile(self):
         if not os.path.exists("%s-%s"%(self.direname,self.scname)):
             os.makedirs("%s-%s"%(self.direname,self.scname))
-        with open("%s-%s"%(self.direname,self.scname)+"/DisruptionScenario.json", "w") as outfile:
-            json.dump(self.drptype2data, outfile, indent = 4)
-    
-for i in [2,5,10]:
-    direname="ACF%d"%i
-    D=Dataset(direname)
-    SC0=ScenarioGenerator(direname,"SC0")
-    SC0.tojsonfile()
+            
+    def getTimeString(self,seconds):
+        days,remainder=divmod(seconds,24*3600)
+        hours,remainder=divmod(remainder,3600)
+        minutes,seconds=divmod(remainder,60)
+        s='{:02}:{:02}'.format(int(hours),int(minutes))
+        return s
 
+    def setFlightDepartureDelay(self,flight2delay):
+        dfdrpschedule=self.D.dfschedule.copy()
+        for flight,delayTime in flight2delay.items():
+            temp=self.D.dfschedule.loc[self.D.dfschedule['Flight']==flight,["SDT","SAT"]]
+            newSDT,newSAT=list(temp["SDT"])[0]+delayTime,list(temp["SAT"])[0]+delayTime
+            dfdrpschedule.loc[dfdrpschedule['Flight']==flight,["SDT","SAT","Timestring"]]=[newSDT,newSAT,self.getTimeString(newSDT)+" -> "+self.getTimeString(newSAT)]        
+        dfdrpschedule.to_csv("%s-%s"%(self.direname,self.scname)+"/DrpSchedule.csv",index=False)
+    
+    def setDelayedReadyTime(self,entity2delay):
+        with open("%s-%s"%(self.direname,self.scname)+"/DelayedReadyTime.json", "w") as outfile:
+            json.dump(entity2delay,outfile,indent=4)
 
     
+
+direname="ACF2"
+D=Dataset(direname)
+SC1=ScenarioGenerator(direname,"SC1")
+SC1.setFlightDepartureDelay({"F00":2*3600})
+#SC1.setDelayedReadyTime({"T00":2*3600})
