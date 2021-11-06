@@ -24,11 +24,15 @@ class MIPModel:
         self.objectiveData=[]
         
         #x_r_f_g
-        variables=["x_%s_%s_%s"%(entity.name,arc[0].name,arc[1].name) for entity in self.entities for arc in entity.graph.edges]
+        variables=["x_%s_%s_%s"%(entity.name,arc[0].name,arc[1].name) for entity in self.entities for arc in entity.partialGraph.edges]
         self.problem.variables.add(names=variables,types=['B']*len(variables))
         
-        #delay_r
+        #delay_r - indiviual passenger delay
         variables=["delay_%s"%entity.name for entity in self.type2entity["PAX"]]
+        self.problem.variables.add(names=variables,lb=[0]*(len(variables)),types=['C']*(len(variables)))        
+
+        #delay_f - approximate passenger delay
+        variables=["delay_%s"%node1.name for node1 in self.S.FNodes]
         self.problem.variables.add(names=variables,lb=[0]*(len(variables)),types=['C']*(len(variables)))        
 
         for node in self.S.FNodes:
@@ -50,8 +54,8 @@ class MIPModel:
         print("*Initiate Flow Balance Constraint*")
         for entity in self.entities:
             head="x_%s_"%entity.name
-            for node1 in entity.graph.nodes:
-                positive,negative=[head+"%s_%s"%(node2.name,node1.name) for node2 in entity.graph.predecessors(node1)],[head+"%s_%s"%(node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+            for node1 in entity.partialGraph.nodes:
+                positive,negative=[head+"%s_%s"%(node2.name,node1.name) for node2 in entity.partialGraph.predecessors(node1)],[head+"%s_%s"%(node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
                 self.constraintData.append(([positive+negative,[1]*len(positive)+[-1]*len(negative)],node1.Demand,'E',"FLOWBALANCE_%s_%s"%(entity.name,node1.name)))
         
     def setNodeClosureConstraint(self):
@@ -61,13 +65,13 @@ class MIPModel:
                 if typ=="ACF" or typ=="CRW":
                     variables=["z_%s"%node1.name]
                     for entity in self.type2entity[typ]:
-                        if node1 in entity.graph:
-                            variables+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+                        if node1 in entity.partialGraph.nodes:
+                            variables+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
                     self.constraintData.append(([variables,[1]*(len(variables))],1,'E',"NODECLOSURE_%s_%s"%(typ,node1.name)))
                 elif typ=="PAX":
                     for entity in self.type2entity[typ]:
-                        if node1 in entity.graph:
-                            variables=["z_%s"%node1.name]+["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+                        if node1 in entity.partialGraph.nodes:
+                            variables=["z_%s"%node1.name]+["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
                             self.constraintData.append(([variables,[1]*(len(variables))],1,'L',"NODECLOSURE_%s_%s"%(typ,node1.name)))
         
     def setFlightTimeConstraint(self):
@@ -75,14 +79,14 @@ class MIPModel:
         for node1 in self.S.FNodes:
             variables=["at_%s"%node1.name,"dt_%s"%node1.name,"deltat_%s"%node1.name]
             for entity in self.type2entity["ACF"]:
-                if node1 in entity.graph:
-                    variables+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+                if node1 in entity.partialGraph.nodes:
+                    variables+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
             self.constraintData.append(([variables,[-1,1,-1]+[node1.SFT]*(len(variables)-3)],0,'E',"FLIGHTTIME_%s"%(node1.name)))
         
     def setSourceArcConstraint(self):
         print("*Initiate Source Arc Constraint*")
         for entity in self.entities:
-            for node in entity.graph.successors(entity.SNode):
+            for node in entity.partialGraph.successors(entity.SNode):
                 if node.SDT<entity.EDT:
                     variables=["dt_%s"%node.name,"x_%s_%s_%s"%(entity.name,entity.SNode.name,node.name)]
                     self.constraintData.append(([variables,[1,-1*entity.EDT]],0,'G',"SOURCEARC_%s_%s"%(entity.SNode.name,node.name)))                        
@@ -90,7 +94,7 @@ class MIPModel:
     def setSinkArcConstraint(self):
         print("*Initiate Sink Arc Constraint*")
         for entity in self.entities:
-            for node in entity.graph.predecessors(entity.TNode):
+            for node in entity.partialGraph.predecessors(entity.TNode):
                 timedelta=node.LAT-entity.LAT
                 if timedelta>0:
                     variables=["at_%s"%node.name,"x_%s_%s_%s"%(entity.name,node.name,entity.TNode.name)]
@@ -99,7 +103,7 @@ class MIPModel:
     def setIntermediateArcConstraint(self):
         print("*Initiate Intermediate Arc Constraint*")
         for entity in self.entities:
-            for node1,node2 in entity.graph.edges:
+            for node1,node2 in entity.partialGraph.edges:
                 if node1!=entity.SNode and node2!=entity.TNode and node1.LAT+entity.CT>node2.SDT:
                     variables=["at_%s"%node1.name,"x_%s_%s_%s"%(entity.name,node1.name,node2.name),"dt_%s"%node2.name]
                     self.constraintData.append(([variables,[1,(entity.CT+node1.LAT),-1]],node1.LAT,'L',"INTERMEDIATEARC_%s_%s"%(node1.name,node2.name)))
@@ -109,13 +113,13 @@ class MIPModel:
         for node1 in self.S.FNodes:
             variables,coeffs=[],[]
             for entity in self.type2entity["PAX"]:
-                if node1 in entity.graph:
-                    temp=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+                if node1 in entity.partialGraph.nodes:
+                    temp=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
                     variables+=temp
                     coeffs+=[1]*len(temp)
             for entity in self.type2entity["ACF"]:
-                if node1 in entity.graph:
-                    temp=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+                if node1 in entity.partialGraph.nodes:
+                    temp=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
                     variables+=temp
                     coeffs+=[-1*self.S.tail2capacity[entity.name]]*len(temp) 
             self.constraintData.append(([variables,coeffs],0,'L',"SEATCAPACITY_%s"%(node1.name)))
@@ -125,8 +129,8 @@ class MIPModel:
         for node1 in self.S.FNodes:
             variables=["deltat_%s"%node1.name]
             for entity in self.type2entity["ACF"]:
-                if node1 in entity.graph:
-                    variables+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+                if node1 in entity.partialGraph.nodes:
+                    variables+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
             self.constraintData.append(([variables,[-1]+[node1.CrsTimeComp]*(len(variables)-1)],0,'G',"CRUISESPEED_%s"%(node1.name)))
             
     def setSpeedCompressionConstraint(self):
@@ -137,8 +141,8 @@ class MIPModel:
                 suffix="_%s_%s"%(node1.name,entity.name)
                 variables1=["y"+suffix]
                 variables2+=["crt"+suffix]
-                if node1 in entity.graph:
-                    variables1+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.graph.successors(node1)]
+                if node1 in entity.partialGraph.nodes:
+                    variables1+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
                 
                 self.constraintData.append(([variables1,[-1]+[1]*(len(variables1)-1)],0,'E',"SPEEDCOMP1_%s_%s"%(node1.name,entity.name))) #Eqn16
                 self.constraintData.append(([["y"+suffix,"v"+suffix],[node1.ScheCrsSpeed,-1]],0,'L',"SPEEDCOMP2_%s_%s"%(node1.name,entity.name))) #Eqn17
@@ -171,14 +175,14 @@ class MIPModel:
     def addApproximatedDelayCost(self):
         print("*Initiate Delay Cost*")
         for node1 in self.S.FNodes:
-            self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%node1.name],[1,-1]],node1.SAT,'L',"ApproxDelay_%s"%node1.name))
+            self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%node1.name],[1,-1]],node1.ScheduleAT,'L',"ApproxDelay_%s"%node1.name))
             arrivalPax=sum([self.S.itin2pax[itin] for itin,dest in self.S.itin2destination.items() if dest==node1.Des])
             self.objectiveData+=[("delay_%s"%node1.name,arrivalPax*self.S.config["DELAYCOST"])]
             
     def addActualDelayCost(self):
         print("*Initiate Delay Cost*")
         for entity in self.type2entity["PAX"]:
-            for node1 in entity.graph.predecessors(entity.TNode):
+            for node1 in entity.partialGraph.predecessors(entity.TNode):
                 LATf=node1.LAT
                 self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%entity.name,"x_%s_%s_%s"%(entity.name,node1.name,entity.TNode.name)],[1,-1,LATf-entity.scheduleAT]],LATf,'L',"ActualDelay_%s"%node1.name))
 
@@ -189,19 +193,19 @@ class MIPModel:
         for entity in self.type2entity["ACF"]:
             flights=self.S.tail2flights[entity.name]
             for i in range(len(flights)-1):
-                if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.graph.edges:
+                if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.partialGraph.edges:
                     self.objectiveData+=[("x_%s_%s_%s"%(entity.name,flights[i],flights[i+1]),self.S.config["FOLLOWSCHEDULECOST"])]
         
         for entity in self.type2entity["CRW"]:
             flights=self.S.crew2flights[entity.name]
             for i in range(len(flights)-1):
-                if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.graph.edges:
+                if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.partialGraph.edges:
                     self.objectiveData+=[("x_%s_%s_%s"%(entity.name,flights[i],flights[i+1]),self.S.config["FOLLOWSCHEDULECOST"])]
             
         for entity in self.type2entity["PAX"]:
             flights=self.S.paxname2flights[entity.name]
             for i in range(len(flights)-1):
-                if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.graph.edges:
+                if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.partialGraph.edges:
                     self.objectiveData+=[("x_%s_%s_%s"%(entity.name,flights[i],flights[i+1]),self.S.config["FOLLOWSCHEDULECOSTPAX"])]
 
 

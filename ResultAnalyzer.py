@@ -7,10 +7,11 @@ from lxml import etree
 from NetworkGenerator import Scenario
 
 class Analyzer:
-    def __init__(self,S,dataset,scenario):
+    def __init__(self,S,dataset,scenario,approxflag=True):
         self.S=S
         self.scenario=scenario
         self.dataset=dataset
+        self.approxflag=approxflag
         with open("Results/"+scenario+"/Variables.json","r") as outfile:
             self.variable2value=json.load(outfile)
         
@@ -21,7 +22,7 @@ class Analyzer:
         self.tail2graph={tail:nx.DiGraph() for tail in S.tail2flights}
         self.flight2crew,self.flight2deptime,self.flight2arrtime,self.flight2crstime,self.flight2crstimecomp={},{},{},{},{}
         self.flight2numpax,self.flight2paxname=defaultdict(int),defaultdict(list)
-        self.pax2delay,self.flight2fuel={},{}
+        self.paxorflight2delay,self.flight2fuel={},{}
         self.cancelFlights=[]
         
         for variable,value in self.variable2value.items():
@@ -47,7 +48,8 @@ class Analyzer:
             elif terms[0]=='deltat' and value>1:
                 self.flight2crstimecomp[terms[1]]=int(value)
             elif terms[0]=='delay' and value>1:
-                self.pax2delay[terms[1]]=int(value)
+                print(terms,value)
+                self.paxorflight2delay[terms[1]]=int(value)
             elif terms[0]=='fc' and value>1:
                 self.flight2fuel[terms[1]]=value
         self.generateRecoveryPlan()
@@ -89,9 +91,6 @@ class Analyzer:
         print("*Original Schedule*")
         print(self.S.dfschedule[attributes])
         print('-'*60)
-#        print("*Disrupted Schedule*")
-#        print(self.S.dfdrpschedule[attributes])
-#        print('-'*60)
         print("*Recovery Plan*")
         print(self.dfrecovery[attributes])
         
@@ -128,10 +127,19 @@ class Analyzer:
         print("Passenger Rerouting (count=%d):\n"%paxRerouteCount+'\n'.join(paxMessages))
         print('-'*60)
 
+    def getDelayCost(self):
+        delayCost=0
+        if self.approxflag:
+            for node1 in self.S.FNodes:
+                arrivalPax=sum([self.S.itin2pax[itin] for itin,dest in self.S.itin2destination.items() if dest==node1.Des])
+                delayCost+=self.paxorflight2delay.get(node1.name,0)*arrivalPax*self.S.config["DELAYCOST"]
+        else:
+            delayCost=sum(self.paxorflight2delay.values())*self.S.config["DELAYCOST"]
+        return delayCost
     
     def getCostTerms(self):
         extraFuelCost=(sum(self.flight2fuel.values())-sum([node.ScheFuelConsump for node in self.S.FNodes]))*self.S.config["FUELCOSTPERKG"]
-        delayCost=sum(self.pax2delay.values())*self.S.config["DELAYCOST"]
+        delayCost=self.getDelayCost()
         cancelCost=len(self.cancelFlights)*self.S.config["FLIGHTCANCELCOST"]
         followGain=self.objective-(delayCost+extraFuelCost+cancelCost)
         
@@ -146,7 +154,8 @@ class Analyzer:
         
 
 dire,scen="ACF2","ACF2-SC1"
-analyzer=Analyzer(Scenario(dire,scen),dire,scen)
+S=Scenario(dire,scen)
+analyzer=Analyzer(S,dire,scen,True)
 analyzer.displayScheduleAndRecovery()
 analyzer.getReroutingActions()
 analyzer.getCostTerms()

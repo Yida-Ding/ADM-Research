@@ -7,14 +7,18 @@ import json
 import os
 
 from ModelGenerator import MIPModel
-from NetworkGenerator import Scenario,Entity
+from NetworkGenerator import Scenario,Entity,PSCAHelper
 
 
-def executeModel(dataset,scenario):
+# sizebound: The upper bound of the number of arcs in the partial network according to PSCA algorithm on page 19
+def executeModel(dataset,scenario,timelimit=60,sizebound=float("inf")):
     S=Scenario(dataset,scenario)
+    pscaACF=PSCAHelper(S,"ACF",sizebound)
+    pscaCRW=PSCAHelper(S,"CRW",sizebound)
+    
     type2entity={}
-    type2entity["ACF"]=[Entity(S,tname,"ACF") for tname in S.tail2flights]
-    type2entity["CRW"]=[Entity(S,cname,"CRW") for cname in S.crew2flights]
+    type2entity["ACF"]=pscaACF.entities
+    type2entity["CRW"]=pscaCRW.entities
     type2entity["PAX"]=[Entity(S,pname,"PAX") for pname in S.paxname2flights]
     
     model=MIPModel(S,type2entity)
@@ -29,10 +33,11 @@ def executeModel(dataset,scenario):
     model.setSpeedCompressionConstraint()
     model.addFlightCancellationCost()
     model.addFuelCost()
-    model.addActualDelayCost()
+#    model.addActualDelayCost()     #for individual passenger
+    model.addApproximatedDelayCost()    #for passenger aggregation
     model.addFollowScheduleCost()
         
-    model.problem.parameters.timelimit.set(60)
+    model.problem.parameters.timelimit.set(timelimit)
     model.solveProblem()
     
     if not os.path.exists("Results"):
@@ -48,7 +53,7 @@ def executeModel(dataset,scenario):
         json.dump(variable2value,outfile,indent=4)
     
 
-head="ACF2"
-executeModel(head,head+"-SC1")
+dataset="ACF2"
+executeModel(dataset,dataset+"-SC1",120)
 
 

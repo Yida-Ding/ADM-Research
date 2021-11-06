@@ -37,10 +37,11 @@ class ScenarioGenerator:
 
     def setFlightDepartureDelay(self,flight2delay):
         dfdrpschedule=self.D.dfschedule.copy()
+        dfdrpschedule["is_disrupted"]=[0]*len(dfdrpschedule)
         for flight,delayTime in flight2delay.items():
             temp=self.D.dfschedule.loc[self.D.dfschedule['Flight']==flight,["SDT","SAT"]]
             newSDT,newSAT=list(temp["SDT"])[0]+delayTime,list(temp["SAT"])[0]+delayTime
-            dfdrpschedule.loc[dfdrpschedule['Flight']==flight,["SDT","SAT","Timestring"]]=[newSDT,newSAT,self.getTimeString(newSDT)+" -> "+self.getTimeString(newSAT)]        
+            dfdrpschedule.loc[dfdrpschedule['Flight']==flight,["SDT","SAT","Timestring","is_disrupted"]]=[newSDT,newSAT,self.getTimeString(newSDT)+" -> "+self.getTimeString(newSAT),1]        
         dfdrpschedule.to_csv("%s-%s"%(self.direname,self.scname)+"/DrpSchedule.csv",index=False)
     
     def setDelayedReadyTime(self,entity2delay):
