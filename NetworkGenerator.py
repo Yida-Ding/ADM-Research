@@ -35,7 +35,7 @@ class Scenario:
                 
         #Create FNodes
         self.flight2dict={dic['Flight']:dic for dic in self.dfdrpschedule.to_dict(orient='record')}
-        self.type2mincontime={"ACF":self.config["ACMINCONTIME"],"CRW":self.config["CREWMINCONTIME"],"PAX":self.config["PAXMINCONTIME"]}
+        self.type2mincontime={"ACF":self.config["ACMINCONTIME"],"CRW":self.config["CREWMINCONTIME"],"PAX":self.config["PAXMINCONTIME"],"ITIN":self.config["PAXMINCONTIME"]}
         self.FNodes=[Node(self,ntype="FNode",name=flight) for flight in self.dfdrpschedule["Flight"].tolist()]
             
         self.name2FNode={node.name:node for node in self.FNodes}
@@ -43,7 +43,14 @@ class Scenario:
         self.drpFNodes=[self.name2FNode[flight] for flight in self.disruptedFlights]
         self.tail2flights={tail:df_cur.sort_values(by='SDT')["Flight"].tolist() for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
         self.crew2flights={crew:df_cur.sort_values(by='SDT')["Flight"].tolist() for crew,df_cur in self.dfdrpschedule.groupby("Crew")}
-        self.itin2flights={row.Itinerary:row.Flight_legs.split('-') for row in self.dfitinerary.itertuples()}
+        
+        self.itin2flights,self.itin2pax,self.flight2itinNum={},{},defaultdict(list)
+        for row in self.dfitinerary.itertuples():
+            flights=row.Flight_legs.split('-')
+            self.itin2flights[row.Itinerary]=flights
+            self.itin2pax[row.Itinerary]=row.Pax
+            for flight in flights:
+                self.flight2itinNum[flight].append((row.Itinerary,row.Pax))
         
         self.paxname2flights,self.paxname2itin,self.flight2paxnames={},{},defaultdict(list)
         for row in self.dfpassenger.itertuples():
@@ -51,12 +58,11 @@ class Scenario:
             self.paxname2flights[row.Pax]=flights
             self.paxname2itin[row.Pax]=row.Itinerary
             for flight in flights:
-                self.flight2paxnames[flight].append(row.Pax)
+                self.flight2paxnames[flight].append(row.Pax)        
         
-        self.itin2pax={row.Itinerary:row.Pax for row in self.dfitinerary.itertuples()}
         self.itin2destination={itin:self.name2FNode[self.itin2flights[itin][-1]].Des for itin in self.itin2flights.keys()}
         self.tail2capacity={tail:df_cur["Capacity"].tolist()[0] for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
-        self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,"PAX":self.paxname2flights}
+        self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,"PAX":self.paxname2flights,"ITIN":self.itin2flights}
 
         #Generate connectable digraph for flight nodes
         self.connectableGraph=nx.DiGraph()
@@ -96,7 +102,6 @@ class Node:
             
         elif ntype=="SNode" or ntype=="TNode":
             self.Ori,self.Des,self.EAT,self.LDT,self.CT,self.Demand=info
-            self.SDT=self.SAT=self.LAT=self.EDT=self.CrsTimeComp=self.SFT=None
 
 class Entity:
     def __init__(self,S,name,etype):
@@ -108,13 +113,21 @@ class Entity:
         self.Ori=S.flight2dict[self.F[0]]["From"]
         self.Des=S.flight2dict[self.F[-1]]["To"]
         self.LAT=S.config["ENDTIME"]
-        if etype!="PAX":
+        
+        if etype=="ACF" or etype=="CRW":
             self.EDT=S.config["STARTTIME"]+self.S.entity2delayTime.get(name,0) #ready time of crew or aircraft
-        else:
+            self.Nb=1
+        elif etype=="PAX":
             self.EDT=S.flight2scheduleDT[self.F[0]] #ready time of passenger
             self.scheduleAT=S.flight2scheduleAT[self.F[-1]]
-        self.SNode=Node(S,"SNode","S-"+name,(None,self.Ori,self.EDT,None,0,-1))
-        self.TNode=Node(S,"TNode","T-"+name,(self.Des,None,None,self.LAT,0,1))
+            self.Nb=1
+        elif etype=="ITIN":
+            self.EDT=S.flight2scheduleDT[self.F[0]] #ready time of itinerary
+            self.scheduleAT=S.flight2scheduleAT[self.F[-1]]
+            self.Nb=S.itin2pax[name]
+            
+        self.SNode=Node(S,"SNode","S-"+name,(None,self.Ori,self.EDT,None,0,-self.Nb))
+        self.TNode=Node(S,"TNode","T-"+name,(self.Des,None,None,self.LAT,0,self.Nb))
         self.FNodes=[S.name2FNode[name] for name in self.F]
         self.name2Node=S.name2FNode.copy()
         self.name2Node.update({"S-"+name:self.SNode,"T-"+name:self.TNode})
@@ -135,7 +148,7 @@ class Entity:
         
     def generatePath(self,tempPath):
         lastNode=tempPath[-1]
-        if self.etype=="PAX" and lastNode.Des==self.Des:
+        if (self.etype=="PAX" or self.etype=="ITIN") and lastNode.Des==self.Des:
             return
         for nextNode in self.connectableGraph.successors(lastNode):
             if nextNode not in tempPath:
@@ -146,14 +159,7 @@ class Entity:
                     if nextNode.Des==self.Des:
                         nx.add_path(self.partialGraph,tempPathc+[self.TNode])
                     self.generatePath(tempPathc)
-    
-    def plotPartialNetwork(self,ax):
-        edgecolor=['blue' if edge in self.schedArcs else 'lightgrey' for edge in self.partialGraph.edges]
-        nodecolor=['lightgreen' if node.name[:2] in ["S-","T-"] else 'orange' if node.name in self.S.disruptedFlights else 'lightblue' for node in self.partialGraph.nodes]
-        nodelabel={node:self.Node2name[node] for node in self.partialGraph.nodes}
-        nx.draw_circular(self.partialGraph,labels=nodelabel,with_labels=True,node_color=nodecolor,edge_color=edgecolor,ax=ax)
-        ax.set_title("Partial Network of %s"%self.name)
-    
+        
     def eliminateArc(self,arc):
         if arc in self.partialGraph.edges:
             self.partialGraph.remove_edge(*arc)
@@ -169,15 +175,28 @@ class Entity:
         for arc in arcset:
             self.eliminateArc(arc)
           
+    def plotPartialNetwork(self,ax):
+        edgecolor=['blue' if edge in self.schedArcs else 'lightgrey' for edge in self.partialGraph.edges]
+        nodecolor=['lightgreen' if node.name[:2] in ["S-","T-"] else 'orange' if node.name in self.S.disruptedFlights else 'lightblue' for node in self.partialGraph.nodes]
+        nodelabel={node:self.Node2name[node] for node in self.partialGraph.nodes}
+        nx.draw_circular(self.partialGraph,labels=nodelabel,with_labels=True,node_color=nodecolor,edge_color=edgecolor,ax=ax)
+        ax.set_title("Partial Network of %s"%self.name)
             
+
 class PSCAHelper:
-    def __init__(self,S,etype,sizebound=float("inf")):
+    def __init__(self,S,etype,sizebound):
         self.S=S
         self.etype=etype
         if etype=="ACF":
             self.entities=[Entity(S,tname,"ACF") for tname in S.tail2flights]
         elif etype=="CRW":
             self.entities=[Entity(S,cname,"CRW") for cname in S.crew2flights]
+        elif etype=="PAX":
+            self.entities=[Entity(S,pname,"PAX") for pname in S.paxname2flights]
+            return
+        elif etype=="ITIN":
+            self.entities=[Entity(S,iname,"ITIN") for iname in S.itin2flights]
+            return
         
         #merge the partial graphs of the same entity type
         self.etypeGraph=nx.Graph()
@@ -224,34 +243,6 @@ class PSCAHelper:
         nx.draw_circular(self.etypeGraph,labels=nodelabel,with_labels=True,node_color=nodecolor,edge_color=edgecolor,ax=ax)
         ax.set_title("Network of %s"%self.etype)
         
-
-#dataset="ACF2"
-#S=Scenario(dataset,dataset+"-SC1")
-#ACFs=PSCAHelper(S,"ACF",25)
-#fig,axes=plt.subplots(1,2,figsize=(15,6))
-#A1=ACFs.entities[0]
-#A1.plotPartialNetwork(axes[0])
-#A2=ACFs.entities[1]
-#A2.plotPartialNetwork(axes[1])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

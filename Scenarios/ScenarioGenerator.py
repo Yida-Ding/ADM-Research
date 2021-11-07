@@ -49,9 +49,10 @@ class ScenarioGenerator:
             json.dump(entity2delay,outfile,indent=4)
 
     
+SC1=ScenarioGenerator("ACF10","SC1")
+SC1.setFlightDepartureDelay({"F00":2*3600,"F10":2*3600})
+SC1.setDelayedReadyTime({"T01":2*3600})
 
-direname="ACF2"
-D=Dataset(direname)
-SC1=ScenarioGenerator(direname,"SC1")
-SC1.setFlightDepartureDelay({"F00":2*3600})
-#SC1.setDelayedReadyTime({"T00":2*3600})
+
+
+
