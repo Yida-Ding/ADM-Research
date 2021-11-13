@@ -9,7 +9,6 @@ import os
 import cplex
 import numpy as np
 import itertools
-
 from NetworkGenerator import Scenario,Entity
 
 class MIPModel:
@@ -22,8 +21,8 @@ class MIPModel:
         self.constraintData,self.objectiveData,self.itinVariables=[],[],[]
         
         for node in self.S.FNodes:
-            #z_f, dt_f, at_f, deltat_f, delay_f
-            self.problem.variables.add(names=["z_%s"%node.name,"dt_%s"%node.name,"at_%s"%node.name,"deltat_%s"%node.name,"delay_%s"%node.name],types=['B','C','C','C','C'],lb=[0,node.SDT,node.EAT,0,0],ub=[1,node.LDT,node.LAT,node.CrsTimeComp,1e20])            
+            #z_f, dt_f, at_f, deltat_f
+            self.problem.variables.add(names=["z_%s"%node.name,"dt_%s"%node.name,"at_%s"%node.name,"deltat_%s"%node.name],types=['B','C','C','C'],lb=[0,node.SDT,node.EAT,0],ub=[1,node.LDT,node.LAT,node.CrsTimeComp])            
             #y_f_r, v_f_r, crt_f_r, fc_f_r, tau1_f_r, tau3_f_r, tau4_f_r, w_f_r
             for entity in self.type2entity["ACF"]:
                 suffix="_%s_%s"%(node.name,entity.name)
@@ -44,14 +43,13 @@ class MIPModel:
             #delay_r (indiviual passenger delay)
             variables=["delay_%s"%entity.name for entity in self.type2entity["PAX"]]
             self.problem.variables.add(names=variables,lb=[0]*(len(variables)),types=['C']*(len(variables)))            
-
-    def solveProblem(self):
+        
+    def passConstraintsToCplex(self):
         self.problem.variables.add(names=self.itinVariables,types=['B']*len(self.itinVariables))
         lin_exp,rhs,senses,names=zip(*self.constraintData)
         self.problem.linear_constraints.add(lin_expr=lin_exp,rhs=rhs,senses=senses,names=names)   
         self.problem.objective.set_linear(self.objectiveData)
         self.problem.objective.set_offset(-sum([node.ScheFuelConsump for node in self.S.FNodes])*self.S.config["FUELCOSTPERKG"])
-        self.problem.solve()
 
     def setFlowBalanceConstraint(self):
         print("Initiate Flow Balance Constraint")
@@ -157,8 +155,8 @@ class MIPModel:
                     variables+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
             self.constraintData.append(([variables,[-1]+[node1.CrsTimeComp]*(len(variables)-1)],0,'G',"CRUISESPEED_%s"%(node1.name)))
             
-    def setSpeedCompressionConstraint(self):
-        print("Initiate Speed Compression Constraint")
+    def setCrsTimeCompConstraint(self,crstimecomp):
+        print("Initiate Cruise Time Compression Constraint")
         for node1 in self.S.FNodes:
             variables2=["deltat_%s"%node1.name]
             for entity in self.type2entity["ACF"]:
@@ -168,23 +166,23 @@ class MIPModel:
                 if node1 in entity.partialGraph.nodes:
                     variables1+=["x_%s_%s_%s"%(entity.name,node1.name,node2.name) for node2 in entity.partialGraph.successors(node1)]
                 
-                self.constraintData.append(([variables1,[-1]+[1]*(len(variables1)-1)],0,'E',"SPEEDCOMP1_%s_%s"%(node1.name,entity.name))) #Eqn16
-                self.constraintData.append(([["y"+suffix,"v"+suffix],[node1.ScheCrsSpeed,-1]],0,'L',"SPEEDCOMP2_%s_%s"%(node1.name,entity.name))) #Eqn17
-                self.constraintData.append(([["y"+suffix,"v"+suffix],[node1.MaxCrsSpeed,-1]],0,'G',"SPEEDCOMP3_%s_%s"%(node1.name,entity.name))) #Eqn17
-                self.constraintData.append(([["fc"+suffix,"tau1"+suffix,"v"+suffix,"tau3"+suffix,"tau4"+suffix],[-1/node1.CrsStageDistance]+self.S.config["FUELCONSUMPPARA"]],0,'L',"SPEEDCOMP4_%s_%s"%(node1.name,entity.name))) #Eqn34
-                                
+                self.constraintData.append(([variables1,[-1]+[1]*(len(variables1)-1)],0,'E',"CRSTIMECOMP1_%s_%s"%(node1.name,entity.name))) #Eqn16
+                self.constraintData.append(([["y"+suffix,"v"+suffix],[node1.ScheCrsSpeed,-1]],0,'L',"CRSTIMECOMP2_%s_%s"%(node1.name,entity.name))) #Eqn17
+                self.constraintData.append(([["y"+suffix,"v"+suffix],[node1.MaxCrsSpeed,-1]],0,'G',"CRSTIMECOMP3_%s_%s"%(node1.name,entity.name))) #Eqn17
+                self.constraintData.append(([["fc"+suffix,"tau1"+suffix,"v"+suffix,"tau3"+suffix,"tau4"+suffix],[-1/node1.CrsStageDistance]+self.S.config["FUELCONSUMPPARA"]],0,'L',"CRSTIMECOMP4_%s_%s"%(node1.name,entity.name))) #Eqn34                                
                 q1=cplex.SparseTriple(ind1=["v"+suffix,"tau1"+suffix],ind2=["v"+suffix,"y"+suffix],val=[1,-1]) #Eqn35
                 q2=cplex.SparseTriple(ind1=["y"+suffix,"w"+suffix],ind2=["y"+suffix,"v"+suffix],val=[1,-1])  #Eqn36
                 q3=cplex.SparseTriple(ind1=["w"+suffix,"tau3"+suffix],ind2=["w"+suffix,"y"+suffix],val=[1,-1])  #Eqn37
                 q4=cplex.SparseTriple(ind1=["w"+suffix,"tau4"+suffix],ind2=["w"+suffix,"v"+suffix],val=[1,-1])  #Eqn38
-                q5=cplex.SparseTriple(ind1=["y"+suffix,"v"+suffix],ind2=["y"+suffix,"crt"+suffix],val=[node1.CrsStageDistance,-1]) #Eqn39
-                
+                q5=cplex.SparseTriple(ind1=["y"+suffix,"v"+suffix],ind2=["y"+suffix,"crt"+suffix],val=[node1.CrsStageDistance,-1]) #Eqn39                
                 qs=[q1,q2,q3,q4,q5]
                 for i in range(len(qs)):
                     self.problem.quadratic_constraints.add(quad_expr=qs[i],rhs=0,sense='L')
                     
-            self.constraintData.append(([variables2,[1]*len(variables2)],node1.ScheCrsTime,'E',"SPEEDCOMP5_%s"%node1.name)) #Eqn20
-
+            self.constraintData.append(([variables2,[1]*len(variables2)],node1.ScheCrsTime,'E',"CRSTIMECOMP5_%s"%node1.name)) #Eqn20
+            if not crstimecomp:
+                self.constraintData.append(([["deltat_%s"%node1.name],[1]],0,'E',"CRSTIMECOMP6_%s"%node1.name))
+                
     def addFlightCancellationCost(self):
         print("Initiate Flight Cancellation Cost")
         self.objectiveData+=[("z_%s"%node1.name,self.S.config["FLIGHTCANCELCOST"]) for node1 in self.S.FNodes]
@@ -195,44 +193,42 @@ class MIPModel:
             for entity in self.type2entity["ACF"]:
                 self.objectiveData+=[("fc_%s_%s"%(node1.name,entity.name),self.S.config["FUELCOSTPERKG"])]
     
-    #use linear function with flight delay approximation in 3.10.1
-    def addApproximatedDelayCost(self):
+    def addDelayCost(self,delaytype):
         print("Initiate Delay Cost")
-        for node1 in self.S.FNodes:
-            self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%node1.name],[1,-1]],node1.ScheduleAT,'L',"ApproxDelay_%s"%node1.name))
-            arrivalPax=sum([self.S.itin2pax[itin] for itin,dest in self.S.itin2destination.items() if dest==node1.Des])
-            self.objectiveData+=[("delay_%s"%node1.name,arrivalPax*self.S.config["DELAYCOST"])]
-            
-    def addActualDelayCost(self):
-        print("Initiate Delay Cost")
-        for entity in self.type2entity["PAX"]:
-            for node1 in entity.partialGraph.predecessors(entity.TNode):
-                LATf=node1.LAT
-                self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%entity.name,"x_%s_%s_%s"%(entity.name,node1.name,entity.TNode.name)],[1,-1,LATf-entity.scheduleAT]],LATf,'L',"ActualDelay_%s"%node1.name))
-            self.objectiveData+=[("delay_%s"%entity.name,self.S.config["DELAYCOST"])]
-            
+        if delaytype=="approx":
+            for node1 in self.S.FNodes:
+                self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%node1.name],[1,-1]],node1.ScheduleAT,'L',"ApproxDelay_%s"%node1.name))
+                arrivalPax=sum([self.S.itin2pax[itin] for itin,dest in self.S.itin2destination.items() if dest==node1.Des])
+                self.objectiveData+=[("delay_%s"%node1.name,arrivalPax*self.S.config["DELAYCOST"])]
+        elif delaytype=="actual":
+            for entity in self.type2entity["PAX"]:
+                for node1 in entity.partialGraph.predecessors(entity.TNode):
+                    LATf=node1.LAT
+                    self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%entity.name,"x_%s_%s_%s"%(entity.name,node1.name,entity.TNode.name)],[1,-1,LATf-entity.scheduleAT]],LATf,'L',"ActualDelay_%s"%node1.name))
+                self.objectiveData+=[("delay_%s"%entity.name,self.S.config["DELAYCOST"])]
+              
     def addFollowScheduleCost(self):
         print("Initiate Follow Schedule Cost")
         for entity in self.type2entity["ACF"]:
-            flights=self.S.tail2flights[entity.name]
+            flights=[entity.SNode.name]+self.S.tail2flights[entity.name]+[entity.TNode.name]
             for i in range(len(flights)-1):
                 if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.partialGraph.edges:
                     self.objectiveData+=[("x_%s_%s_%s"%(entity.name,flights[i],flights[i+1]),self.S.config["FOLLOWSCHEDULECOST"])]
         
         for entity in self.type2entity["CRW"]:
-            flights=self.S.crew2flights[entity.name]
+            flights=[entity.SNode.name]+self.S.crew2flights[entity.name]+[entity.TNode.name]
             for i in range(len(flights)-1):
                 if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.partialGraph.edges:
                     self.objectiveData+=[("x_%s_%s_%s"%(entity.name,flights[i],flights[i+1]),self.S.config["FOLLOWSCHEDULECOST"])]
             
         for entity in self.type2entity.get("PAX",[]):
-            flights=self.S.paxname2flights[entity.name]
+            flights=[entity.SNode.name]+self.S.paxname2flights[entity.name]+[entity.TNode.name]
             for i in range(len(flights)-1):
                 if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.partialGraph.edges:
                     self.objectiveData+=[("x_%s_%s_%s"%(entity.name,flights[i],flights[i+1]),self.S.config["FOLLOWSCHEDULECOSTPAX"])]
 
         for entity in self.type2entity.get("ITIN",[]):
-            flights=self.S.itin2flights[entity.name]
+            flights=[entity.SNode.name]+self.S.itin2flights[entity.name]+[entity.TNode.name]
             for i in range(len(flights)-1):
                 if (entity.name2Node[flights[i]],entity.name2Node[flights[i+1]]) in entity.partialGraph.edges:
                     self.objectiveData+=[("x_%s_%s_%s"%(entity.name,flights[i],flights[i+1]),entity.Nb*self.S.config["FOLLOWSCHEDULECOSTPAX"])]

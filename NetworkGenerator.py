@@ -145,6 +145,7 @@ class Entity:
         self.schedNodes=[self.SNode]+self.FNodes+[self.TNode]
         self.schedArcs={(self.schedNodes[i],self.schedNodes[i+1]) for i in range(len(self.schedNodes)-1)}
         self.schedArcs2=self.schedArcs|{(y,x) for (x,y) in self.schedArcs}
+        self.orig_nodes,self.orig_arcs=self.partialGraph.number_of_nodes(),self.partialGraph.number_of_edges()
         
     def generatePath(self,tempPath):
         lastNode=tempPath[-1]
@@ -184,20 +185,25 @@ class Entity:
             
 
 class PSCAHelper:
-    def __init__(self,S,etype,sizebound):
+    def __init__(self,S,etype,isbound,sizebound=None):
         self.S=S
         self.etype=etype
+        self.isbound=isbound
+        self.sizebound=sizebound
+        print("Initiate %s Entities"%etype)
         if etype=="ACF":
             self.entities=[Entity(S,tname,"ACF") for tname in S.tail2flights]
         elif etype=="CRW":
             self.entities=[Entity(S,cname,"CRW") for cname in S.crew2flights]
         elif etype=="PAX":
             self.entities=[Entity(S,pname,"PAX") for pname in S.paxname2flights]
-            return
         elif etype=="ITIN":
             self.entities=[Entity(S,iname,"ITIN") for iname in S.itin2flights]
-            return
-        
+        if self.isbound:
+            print("Initiate %s Reduced Partial Graphs"%self.etype)
+            self.controlPartialGraphSize()
+            
+    def controlPartialGraphSize(self):        
         #merge the partial graphs of the same entity type
         self.etypeGraph=nx.Graph()
         self.schedArcs=set()
@@ -210,39 +216,46 @@ class PSCAHelper:
         
         #calculate the shortest path distance from each flight node to nearest disrupted nodes
         self.node2distDrp={}
-        for drpNode in S.drpFNodes:
+        for drpNode in self.S.drpFNodes:
             node2distance=nx.single_source_dijkstra_path_length(self.etypeGraph,drpNode,cutoff=None,weight='weight')
             self.node2distDrp.update({node:dis for node,dis in node2distance.items() if node not in self.node2distDrp or self.node2distDrp[node]>dis})
         
         #iteratively remove arcs and nodes based on arc value
-        resd=defaultdict(list)
         for entity in self.entities:
-            selnodes=set(S.FNodes)-set(entity.FNodes)
-            valueWithArc=[(-np.mean([self.node2distDrp[arc[0]],self.node2distDrp[arc[1]]]) if arc[0] in selnodes or arc[1] in selnodes else 0, ind, arc) for ind,arc in enumerate(entity.partialGraph.edges)] #Eqn40
+            selnodes=set(self.S.FNodes)-set(entity.FNodes)
+            valueWithArc=[]
+            for ind,arc in enumerate(entity.partialGraph.edges):
+                if arc[0].ntype=="SNode" or arc[1].ntype=="TNode":
+                    valueWithArc.append((0,ind,arc))
+                elif arc[0] in selnodes or arc[1] in selnodes:
+                    valueWithArc.append((-np.mean([self.node2distDrp.get(arc[0],1),self.node2distDrp.get(arc[1],1)]),ind,arc))
+                else:   # the schedule arcs fall here
+                    valueWithArc.append((0,ind,arc))
+                        
             hq.heapify(valueWithArc)
-            resd["entity"].append(entity.name)
-            resd["orig_nodes"].append(entity.partialGraph.number_of_nodes())
-            resd["orig_arcs"].append(entity.partialGraph.number_of_edges())
-
-            while entity.partialGraph.number_of_edges()>sizebound:
+            while entity.partialGraph.number_of_edges()>self.sizebound:
                 value,ind,arc=hq.heappop(valueWithArc)
                 entity.eliminateArc(arc)
-            
-            resd["final_nodes"].append(entity.partialGraph.number_of_nodes())
-            resd["final_arcs"].append(entity.partialGraph.number_of_edges())
-            resd["node_reduce"].append("{0:.0%}".format((resd["orig_nodes"][-1]-resd["final_nodes"][-1])/resd["orig_nodes"][-1]))
-            resd["arc_reduce"].append("{0:.0%}".format((resd["orig_arcs"][-1]-resd["final_arcs"][-1])/resd["orig_arcs"][-1]))
+                
+    def getGraphReductionStat(self,modeid):
+        resd=defaultdict(list)
+        for entity in self.entities:
+            resd["entity"].append(entity.name)
+            resd["orig_arc"].append(entity.orig_arcs)
+            resd["final_arc"].append(entity.partialGraph.number_of_edges())
+            resd["arc_reduce"].append("{0:.0%}".format((resd["orig_arc"][-1]-resd["final_arc"][-1])/resd["orig_arc"][-1]))
+            resd["orig_sdArc"].append(len(entity.schedArcs))
+            resd["final_sdArc"].append(len(set(entity.partialGraph.edges)&set(entity.schedArcs)))
+            resd["sdArc_reduce"].append("{0:.0%}".format((resd["orig_sdArc"][-1]-resd["final_sdArc"][-1])/resd["orig_sdArc"][-1]))
+
+        pd.DataFrame(resd).to_csv("Results/%s/%s/GraphStat-%s.csv"%(self.S.scname,modeid,self.etype))
         
-        print("PSCA (Bound=%f):"%sizebound)
-        print(pd.DataFrame(resd))
-            
     def plotEntityTypeNetwork(self,ax):
         edgecolor=['blue' if edge in self.schedArcs else 'lightgrey' for edge in self.etypeGraph.edges]
         nodecolor=['lightgreen' if node.name[:2] in ["S-","T-"] else 'orange' if node.name in self.S.disruptedFlights else 'lightblue' for node in self.etypeGraph.nodes]
         nodelabel={node:self.Node2name[node] for node in self.etypeGraph.nodes}
         nx.draw_circular(self.etypeGraph,labels=nodelabel,with_labels=True,node_color=nodecolor,edge_color=edgecolor,ax=ax)
         ax.set_title("Network of %s"%self.etype)
-        
 
 
 

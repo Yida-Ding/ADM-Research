@@ -1,29 +1,31 @@
 import pandas as pd
 import networkx as nx
 import json
+import cplex
 from collections import defaultdict
 from lxml import etree
-
 from NetworkGenerator import Scenario
 
 class Analyzer:
-    def __init__(self,dataset,scenario,paxtype="ITIN",delaytype="APPROX"):
+    def __init__(self,dataset,scenario,modeid):
         self.S=Scenario(dataset,scenario)
         self.scenario=scenario
         self.dataset=dataset
-        self.paxtype=paxtype
-        self.delaytype=delaytype
-        with open("Results/%s/%s-%s/Variables.json"%(scenario,paxtype,delaytype),"r") as outfile:
-            self.variable2value=json.load(outfile)        
-        tree=etree.parse("Results/%s/%s-%s/ModelSolution.sol"%(scenario,paxtype,delaytype))
+        self.modeid=modeid
+        with open("Results/%s/%s/Mode.json"%(self.scenario,self.modeid),"r") as outfile:
+            self.mode=json.load(outfile)
+        with open("Results/%s/%s/Variables.json"%(self.scenario,self.modeid),"r") as outfile:
+            self.variable2value=json.load(outfile)            
+        with open("Results/%s/%s/Coefficients.json"%(self.scenario,self.modeid),"r") as outfile:
+            self.variable2coeff=json.load(outfile)            
+        tree=etree.parse("Results/%s/%s/ModelSolution.sol"%(self.scenario,self.modeid))
         for x in tree.xpath("//header"):
             self.objective=float(x.attrib["objectiveValue"])
             
         self.tail2graph={tail:nx.DiGraph() for tail in self.S.tail2flights}
         self.flight2crew,self.flight2deptime,self.flight2arrtime,self.flight2crstime,self.flight2crstimecomp={},{},{},{},{}
         self.flight2numpax,self.flight2paxname,self.flight2itinNum=defaultdict(int),defaultdict(list),defaultdict(list)
-        self.paxflt2delay,self.flight2fuel={},{}
-        self.cancelFlights=[]
+        self.flight2delay,self.variable2fuel,self.scheflow2value,self.cancel2value={},{},{},{}
         
         for variable,value in self.variable2value.items():
             terms=variable.split('_')
@@ -37,21 +39,24 @@ class Analyzer:
                         self.flight2numpax[terms[2]]+=round(value)
                         self.flight2paxname[terms[2]].append(terms[1])
                         self.flight2itinNum[terms[2]].append((terms[1],round(value)))
-                    
+                        
+            if terms[0]=="x" and self.variable2coeff[variable]!=0.0:
+                self.scheflow2value[variable]=value                    
             elif terms[0]=='z' and round(value)!=0:
-                self.cancelFlights.append(terms[1])
+                self.cancel2value[variable]=value
             elif terms[0]=='dt':    
                 self.flight2deptime[terms[1]]=value
             elif terms[0]=='at':
                 self.flight2arrtime[terms[1]]=value
             elif terms[0]=='crt':
                 self.flight2crstime[(terms[1],terms[2])]=value
-            elif terms[0]=='deltat' and value>1:
+            elif terms[0]=='deltat' and round(value)!=0:
                 self.flight2crstimecomp[terms[1]]=round(value)
-            elif terms[0]=='delay' and value>1:
-                self.paxflt2delay[terms[1]]=round(value)
-            elif terms[0]=='fc' and value>1:
-                self.flight2fuel[terms[1]]=value
+            elif terms[0]=='delay'and round(value)!=0:
+                self.flight2delay[terms[1]]=round(value)
+            elif terms[0]=='fc' and round(value)!=0:
+                self.variable2fuel[variable]=value
+        
         self.generateRecoveryPlan()
         
     def generateRecoveryPlan(self):
@@ -75,8 +80,8 @@ class Analyzer:
                 arrdelay=round(resd["RAT"][-1]-self.S.flight2scheduleAT[flight])
                 resd["Delay"].append(self.getTimeString(arrdelay) if arrdelay>0 else '')
         
-        self.dfrecovery=pd.DataFrame(resd).sort_values(by="Flight").reset_index()
-        self.dfrecovery.to_csv("Results/%s/%s-%s/Recovery.csv"%(self.scenario,self.paxtype,self.delaytype),index=False)
+        self.dfrecovery=pd.DataFrame(resd).reset_index()
+        self.dfrecovery.to_csv("Results/%s/%s/Recovery.csv"%(self.scenario,self.modeid),index=False)
         self.flight2recdict={dic['Flight']:dic for dic in self.dfrecovery.to_dict(orient='record')}
         
     def getTimeString(self,seconds):
@@ -106,7 +111,7 @@ class Analyzer:
             if scheTail!=recTail:
                 tailMessages.append("\t%s: %s -> %s"%(flight,scheTail,recTail))
         
-        if self.paxtype=="PAX":
+        if self.mode["PAXTYPE"]=="PAX":
             paxRerouteCount=0
             for flight,recPax in self.flight2paxname.items():
                 schePax,recPax=set(self.S.flight2paxnames[flight]),set(recPax)            
@@ -122,7 +127,7 @@ class Analyzer:
                 if len(leave)!=0:
                     paxMessages.append("\t%s: (-) "%flight+json.dumps(leavedict))
                     
-        elif self.paxtype=="ITIN":
+        elif self.mode["PAXTYPE"]=="ITIN":
             paxRerouteCount=0
             for flight in self.flight2itinNum:
                 leavedict=defaultdict(int)
@@ -142,41 +147,29 @@ class Analyzer:
         print("Crew Swap (count=%d):\n"%(len(crewMessages))+'\n'.join(crewMessages))
         print('-'*60)
         print("Passenger Rerouting (count=%d):\n"%paxRerouteCount+'\n'.join(paxMessages))
-
-    def getDelayCost(self):
-        delayCost=0
-        if self.delaytype=="APPROX":
-            for node1 in self.S.FNodes:
-                arrivalPax=sum([self.S.itin2pax[itin] for itin,dest in self.S.itin2destination.items() if dest==node1.Des])
-                delayCost+=self.paxflt2delay.get(node1.name,0)*arrivalPax*self.S.config["DELAYCOST"]
-        else:
-            delayCost=sum(self.paxflt2delay.values())*self.S.config["DELAYCOST"]
-        return delayCost
     
     def getCostTerms(self):
-        extraFuelCost=(sum(self.flight2fuel.values())-sum([node.ScheFuelConsump for node in self.S.FNodes]))*self.S.config["FUELCOSTPERKG"]
-        delayCost=self.getDelayCost()
-        cancelCost=len(self.cancelFlights)*self.S.config["FLIGHTCANCELCOST"]
-        followGain=self.objective-(delayCost+extraFuelCost+cancelCost)
+        extraFuelCost=sum([self.variable2coeff[variable]*fuel for variable,fuel in self.variable2fuel.items()])+self.variable2value["offset"]
+        delayCost=sum([self.flight2delay.get(node1.name,0)*self.variable2coeff["delay_"+node1.name] for node1 in self.S.FNodes]) if self.mode["DELAYTYPE"]=="approx" else sum(self.flight2delay.values())*self.S.config["DELAYCOST"]
+        cancelCost=sum([self.variable2coeff[variable]*value for variable,value in self.cancel2value.items()])
+        followGain=sum([self.variable2coeff[variable]*value for variable,value in self.scheflow2value.items()])
+        totalCost=extraFuelCost+delayCost+cancelCost
+        values=[extraFuelCost,delayCost,cancelCost,totalCost,followGain,self.objective]
         
-        resd=defaultdict(list)       
-        resd["Cost_term"]=["extra_fuel_cost","delay_cost","cancel_cost","follow_cost","objective"]
-        resd["Value"]=[extraFuelCost,delayCost,cancelCost,followGain,self.objective]
-        resd["Percentage"]=["{0:.0%}".format(v/self.objective) for v in resd["Value"]]
+        resd=defaultdict(list)
+        resd["Cost"]=["extra_fuel_cost","delay_cost","cancel_cost","total_cost","follow_gain","objective"]
+        resd["Value"]=["%d"%value for value in values]
+        resd["Pct"]=["{0:.0%}".format(v/totalCost) for v in values[:4]]+["\\"]*2
         dfcost=pd.DataFrame(resd)
-        dfcost.to_csv("Results/%s/%s-%s/Cost.csv"%(self.scenario,self.paxtype,self.delaytype),index=False)
+        dfcost.to_csv("Results/%s/%s/Cost.csv"%(self.scenario,self.modeid),index=False)
         print('-'*60)
         print(dfcost)
         
-analyzer=Analyzer("ACF10","ACF10-SC1",paxtype="PAX",delaytype="ACTUAL")
+analyzer=Analyzer("ACF10","ACF10-SC1","Mode0")
 analyzer.displayScheduleAndRecovery()
 analyzer.getReroutingActions()
 analyzer.getCostTerms()
 
-analyzer=Analyzer("ACF10","ACF10-SC1",paxtype="ITIN",delaytype="APPROX")
-analyzer.displayScheduleAndRecovery()
-analyzer.getReroutingActions()
-analyzer.getCostTerms()
 
 
 

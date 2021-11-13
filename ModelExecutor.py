@@ -5,26 +5,28 @@ import pandas as pd
 import haversine
 import json
 import os
-
+import numpy as np
+import time
 from ModelGenerator import MIPModel
 from NetworkGenerator import Scenario,Entity,PSCAHelper
 
-'''
-PARAMETERS:
-    paxtype="ITIN"/"PAX" : aggregate the passengers of the same itinarery or leave the passengers as individuals
-    delaytype="APPROX"/"ACTUAL" : calculate the delay cost by approximation (3.10.1) or by actual delay (3.10.3); Note that the combination ("ITIN","ACTUAL") is not allowed
-    timelimit=integer : the duration in seconds for cplex computation
-    sizebound=integer : the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
-'''
 
-def executeModel(dataset,scenario,paxtype="ITIN",delaytype="APPROX",timelimit=60,sizebound=float("inf")):
+def executeModel(dataset,scenario,mode):
+    if not os.path.exists("Results/%s"%scenario):
+        os.makedirs("Results/%s"%scenario)
+    if not os.path.exists("Results/%s/%s"%(scenario,mode["MODEID"])):
+        os.makedirs("Results/%s/%s"%(scenario,mode["MODEID"]))
+
+    Tstart=time.time()
     S=Scenario(dataset,scenario)
     type2entity={}
-    type2entity["ACF"]=PSCAHelper(S,"ACF",sizebound=sizebound).entities
-    type2entity["CRW"]=PSCAHelper(S,"CRW",sizebound=sizebound).entities
-    type2entity[paxtype]=PSCAHelper(S,paxtype,sizebound=None).entities
-    
+    for etype in ["ACF","CRW",mode["PAXTYPE"]]:
+        pscahelper=PSCAHelper(S,etype,mode["BOUNDETYPES"][etype],mode["SIZEBOUND"])
+        type2entity[etype]=pscahelper.entities
+        pscahelper.getGraphReductionStat(mode["MODEID"])
+
     model=MIPModel(S,type2entity)
+    model.problem.solve()
     model.setFlowBalanceConstraint()
     model.setNodeClosureConstraint()
     model.setFlightTimeConstraint()
@@ -33,34 +35,48 @@ def executeModel(dataset,scenario,paxtype="ITIN",delaytype="APPROX",timelimit=60
     model.setIntermediateArcConstraint()
     model.setSeatCapacityConstraint()
     model.setCruiseSpeedConstraint()
-    model.setSpeedCompressionConstraint()
+    model.setCrsTimeCompConstraint(mode["CRSTIMECOMP"])
     model.addFlightCancellationCost()
     model.addFuelCost()
     model.addFollowScheduleCost()
-    if delaytype=="APPROX":
-        model.addApproximatedDelayCost()    #for passenger aggregation
-    else:
-        model.addActualDelayCost()     #for individual passenger
-    model.problem.parameters.timelimit.set(timelimit)
-    model.solveProblem()
+    model.addDelayCost(mode["DELAYTYPE"])
+    model.passConstraintsToCplex()
+    model.problem.parameters.timelimit.set(mode["TIMELIMIT"])
+    print(model.problem.get_stats())
+    model.problem.solve()
+    Tfinal=time.time()
     
-    if not os.path.exists("Results"):
-        os.makedirs("Results")
-    if not os.path.exists("Results/%s"%scenario):
-        os.makedirs("Results/%s"%scenario)
-    if not os.path.exists("Results/%s/%s-%s"%(scenario,paxtype,delaytype)):
-        os.makedirs("Results/%s/%s-%s"%(scenario,paxtype,delaytype))
-        
-    model.problem.solution.write("Results/%s/%s-%s/ModelSolution.sol"%(scenario,paxtype,delaytype))
-    variables=model.problem.variables.get_names()
-    values=model.problem.solution.get_values()
+    resdire="Results/%s/%s/"%(scenario,mode["MODEID"])
+    model.problem.write(resdire+"ModelProblem.lp")
+    model.problem.solution.write(resdire+"ModelSolution.sol")
+    variables,values,coeffs,offset=model.problem.variables.get_names(),model.problem.solution.get_values(),model.problem.objective.get_linear(),model.problem.objective.get_offset()
+    variable2coeff={variables[i]:coeffs[i] for i in range(len(variables))}
     variable2value={variables[i]:values[i] for i in range(len(values))}
-    variable2value.update({"paxtype":paxtype,"delaytype":delaytype})
-    with open("Results/%s/%s-%s/Variables.json"%(scenario,paxtype,delaytype),"w") as outfile:
+    variable2value.update({"offset":offset,"runtime":Tfinal-Tstart})
+    with open(resdire+"Variables.json","w") as outfile:
         json.dump(variable2value,outfile,indent=4)
+    with open(resdire+"Coefficients.json","w") as outfile:
+        json.dump(variable2coeff,outfile,indent=4)        
+    with open(resdire+"Mode.json","w") as outfile:
+        json.dump(mode,outfile,indent=4)
     
+    
+mode={"MODEID":"Mode0",  # the directory name of mode setting
+      "PAXTYPE":"PAX",  # (ITIN/PAX) aggregate the passengers of the same itinarery or leave the passengers as individuals
+      "DELAYTYPE":"actual",  # (approx/actual) calculate the delay cost by approximation (3.10.1) or by actual delay (3.10.3); Note that the combination ("ITIN","actual") is not allowed
+      "CRSTIMECOMP":1,  # (0/1) allowed to compress the cruise time or not 
+      "SIZEBOUND":50,  # the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
+      "BOUNDETYPES":{"ACF":1,"CRW":1,"ITIN":1,"PAX":1},   # (0/1) the entity types that are bounded by PSCA by sizebound, by default all of the entities will be bounded by PSCA     
+      "TIMELIMIT":120   # the duration in seconds for cplex computation
+      }
 
-executeModel("ACF10","ACF10-SC1",paxtype="ITIN",delaytype="APPROX",timelimit=120,sizebound=60)
-executeModel("ACF10","ACF10-SC1",paxtype="PAX",delaytype="ACTUAL",timelimit=120,sizebound=60)
+executeModel("ACF10","ACF10-SC1",mode)
+
+
+
+
+
+
+
 
 

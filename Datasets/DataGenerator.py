@@ -57,23 +57,26 @@ class ItineraryHelper:
         leaveall=0
         for it in self.itinFlights.copy():
             lastFlight=self.itinFlights[it][-1]
-            if lastFlight[2]==origin and self.itinFlights[it][0][1]!=destination and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime:
-                if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]:
-                    newItin="I%02d"%len(self.itinFlights)
-                    self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
-                    leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
-                    self.itinPax[it]-=leave
-                    self.itinPax[newItin]=leave
-                    leaveall+=leave
-                    
-                elif len(self.itinFlights[it])>=2 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]+self.D.config["TWOHOPITINPROB"]:
-                    newItin="I%02d"%len(self.itinFlights)
-                    self.itinFlights[newItin]=self.itinFlights[it]+[(fltname,origin,destination,depTime,arrTime,pax)]
-                    leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
-                    self.itinPax[it]-=leave
-                    self.itinPax[newItin]=leave
-                    leaveall+=leave
-                    
+            if lastFlight[2]==origin and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime:
+                if destination not in [flight[1] for flight in self.itinFlights[it]]: # make sure the new flight added to itin will not return back to the previous origins
+                    if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]:
+                        leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
+                        if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
+                            newItin="I%02d"%len(self.itinFlights)
+                            self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
+                            self.itinPax[it]-=leave
+                            self.itinPax[newItin]=leave
+                            leaveall+=leave
+                        
+                    elif len(self.itinFlights[it])>=2 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]+self.D.config["TWOHOPITINPROB"]:
+                        leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
+                        if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
+                            newItin="I%02d"%len(self.itinFlights)
+                            self.itinFlights[newItin]=self.itinFlights[it]+[(fltname,origin,destination,depTime,arrTime,pax)]
+                            self.itinPax[it]-=leave
+                            self.itinPax[newItin]=leave
+                            leaveall+=leave
+                        
         itin="I%02d"%len(self.itinFlights)
         self.itinFlights[itin]=[(fltname,origin,destination,depTime,arrTime,pax)]
         self.itinPax[itin]=pax-leaveall
@@ -115,12 +118,12 @@ def generateDataset(direname,config,seed=0):
                 break
             fltname="F%02d"%flightind
             flightind+=1
-            pax=int(D.config["LOADFACTOR"]*actyperow.PAX//10) #TODO: scale by 10
+            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
             itin=itinHelper.getAvailableItinerary(fltname,origin,destination,depTime,arrTime,pax)
             flights+=[(fltname,origin,destination,depTime,arrTime,cruiseTime,crew,distance,pax)]
         
-        trajectories.append((acname,actyperow.Model,actyperow.PAX//10,flights)) #TODO: scale by 10
+        trajectories.append((acname,actyperow.Model,actyperow.PAX,flights))
         
     resd=defaultdict(list)
     for trajectory in trajectories:
@@ -174,8 +177,8 @@ def generateDataset(direname,config,seed=0):
         json.dump(config, outfile, indent = 4)
 
 config={"MAXAC":10, # Number of aicraft trajectories to generate
-        "MAXACT":3, # Number of unique aircraft types
-        "MAXAPT":10, # Number of airports
+        "MAXACT":1, # Number of unique aircraft types
+        "MAXAPT":3, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
         "MINFLIGHTDISTANCE":400, # No flights shorter than this distance
         "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
@@ -189,19 +192,18 @@ config={"MAXAC":10, # Number of aicraft trajectories to generate
         "ENDTIME":26*3600, # stop at 2AM next day
         "DIRECTITINPROB":0.85, # probability of direct itinerary
         "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
-        "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6); #TODO: Adapt for different aircraft types in the future
+        "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6)
         "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
         "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance
-        
-        "FLIGHTCANCELCOST":20000, # Flight cancellation cost in dollar on page 22
+        "FLIGHTCANCELCOST":2000000, # Flight cancellation cost in dollar on page 22 (raised to 100 times)
         "FUELCOSTPERKG":0.478/0.454, # Jet fuel price per kg on page 22
         "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel consumption function parameters in 2014 paper
         "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
         "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
-        "FOLLOWSCHEDULECOSTPAX":-0.01 # Negative cost to follow schedule arc for passenger on page 15
+        "FOLLOWSCHEDULECOSTPAX":-0.1 # Negative cost to follow schedule arc for passenger on page 15
         }
 
 generateDataset("ACF%d"%config["MAXAC"],config,seed=0)
+        
     
-
 

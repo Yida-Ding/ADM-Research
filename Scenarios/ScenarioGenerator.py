@@ -35,7 +35,7 @@ class ScenarioGenerator:
         s='{:02}:{:02}'.format(int(hours),int(minutes))
         return s
 
-    def setFlightDepartureDelay(self,flight2delay):
+    def setFlightDepartureDelay(self,flight2delay={}):
         dfdrpschedule=self.D.dfschedule.copy()
         dfdrpschedule["is_disrupted"]=[0]*len(dfdrpschedule)
         for flight,delayTime in flight2delay.items():
@@ -44,15 +44,15 @@ class ScenarioGenerator:
             dfdrpschedule.loc[dfdrpschedule['Flight']==flight,["SDT","SAT","Timestring","is_disrupted"]]=[newSDT,newSAT,self.getTimeString(newSDT)+" -> "+self.getTimeString(newSAT),1]        
         dfdrpschedule.to_csv("%s-%s"%(self.direname,self.scname)+"/DrpSchedule.csv",index=False)
     
-    def setDelayedReadyTime(self,entity2delay):
+    def setDelayedReadyTime(self,entity2delay={}):
         with open("%s-%s"%(self.direname,self.scname)+"/DelayedReadyTime.json", "w") as outfile:
             json.dump(entity2delay,outfile,indent=4)
 
-    
+SC0=ScenarioGenerator("ACF10","SC0")
+SC0.setFlightDepartureDelay({})
+SC0.setDelayedReadyTime({})
+
 SC1=ScenarioGenerator("ACF10","SC1")
-SC1.setFlightDepartureDelay({"F00":2*3600,"F10":2*3600})
-SC1.setDelayedReadyTime({"T01":2*3600})
-
-
-
-
+SC1.setFlightDepartureDelay({"F0%d"%i:3600 for i in range(5)})
+SC1.setDelayedReadyTime({})
+        
