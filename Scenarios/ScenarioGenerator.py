@@ -21,7 +21,8 @@ class Dataset:
         self.airports=set(self.dfschedule["From"].tolist()+self.dfschedule["To"].tolist())
         
 class ScenarioGenerator:        
-    def __init__(self,direname,scname):
+    def __init__(self,direname,scname,seed):
+        random.seed(seed)
         self.direname=direname
         self.scname=scname
         self.D=Dataset(direname)
@@ -47,12 +48,17 @@ class ScenarioGenerator:
     def setDelayedReadyTime(self,entity2delay={}):
         with open("%s-%s"%(self.direname,self.scname)+"/DelayedReadyTime.json", "w") as outfile:
             json.dump(entity2delay,outfile,indent=4)
-
-SC0=ScenarioGenerator("ACF10","SC0")
-SC0.setFlightDepartureDelay({})
-SC0.setDelayedReadyTime({})
-
-SC1=ScenarioGenerator("ACF10","SC1")
-SC1.setFlightDepartureDelay({"F0%d"%i:3600 for i in range(5)})
+    
+    def getRandomFlightDelay(self,k):
+        selflights=random.sample(self.D.flights,k)
+        return {flight:random.randint(100,1000) for flight in selflights}
+        
+SC1=ScenarioGenerator("ACF80","SC1",0)
+data=SC1.getRandomFlightDelay(20)
+SC1.setFlightDepartureDelay(data)
 SC1.setDelayedReadyTime({})
+
+
+
+
         

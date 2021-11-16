@@ -125,7 +125,7 @@ class Entity:
             self.EDT=S.flight2scheduleDT[self.F[0]] #ready time of itinerary
             self.scheduleAT=S.flight2scheduleAT[self.F[-1]]
             self.Nb=S.itin2pax[name]
-            
+        
         self.SNode=Node(S,"SNode","S-"+name,(None,self.Ori,self.EDT,None,0,-self.Nb))
         self.TNode=Node(S,"TNode","T-"+name,(self.Des,None,None,self.LAT,0,self.Nb))
         self.FNodes=[S.name2FNode[name] for name in self.F]
@@ -241,6 +241,9 @@ class PSCAHelper:
         resd=defaultdict(list)
         for entity in self.entities:
             resd["entity"].append(entity.name)
+            resd["orig_node"].append(entity.orig_nodes)
+            resd["final_node"].append(entity.partialGraph.number_of_nodes())
+            resd["node_reduce"].append("{0:.0%}".format((resd["orig_node"][-1]-resd["final_node"][-1])/resd["orig_node"][-1]))
             resd["orig_arc"].append(entity.orig_arcs)
             resd["final_arc"].append(entity.partialGraph.number_of_edges())
             resd["arc_reduce"].append("{0:.0%}".format((resd["orig_arc"][-1]-resd["final_arc"][-1])/resd["orig_arc"][-1]))
@@ -248,7 +251,7 @@ class PSCAHelper:
             resd["final_sdArc"].append(len(set(entity.partialGraph.edges)&set(entity.schedArcs)))
             resd["sdArc_reduce"].append("{0:.0%}".format((resd["orig_sdArc"][-1]-resd["final_sdArc"][-1])/resd["orig_sdArc"][-1]))
 
-        pd.DataFrame(resd).to_csv("Results/%s/%s/GraphStat-%s.csv"%(self.S.scname,modeid,self.etype))
+        pd.DataFrame(resd).to_csv("Results/%s/%s/GraphStat-%s.csv"%(self.S.scname,modeid,self.etype),index=None)
         
     def plotEntityTypeNetwork(self,ax):
         edgecolor=['blue' if edge in self.schedArcs else 'lightgrey' for edge in self.etypeGraph.edges]

@@ -165,7 +165,7 @@ class Analyzer:
         print('-'*60)
         print(dfcost)
         
-analyzer=Analyzer("ACF10","ACF10-SC1","Mode0")
+analyzer=Analyzer("ACF2","ACF2-SC1","Mode1")
 analyzer.displayScheduleAndRecovery()
 analyzer.getReroutingActions()
 analyzer.getCostTerms()

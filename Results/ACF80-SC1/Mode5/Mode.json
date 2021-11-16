@@ -1,0 +1,14 @@
+{
+    "MODEID": "Mode5",
+    "PAXTYPE": "ITIN",
+    "DELAYTYPE": "approx",
+    "CRSTIMECOMP": 1,
+    "TIMELIMIT": 100000.0,
+    "BOUNDETYPES": {
+        "ACF": 1,
+        "CRW": 1,
+        "ITIN": 1,
+        "PAX": 1
+    },
+    "SIZEBOUND": 150
+}

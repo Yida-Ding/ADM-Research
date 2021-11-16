@@ -32,25 +32,24 @@ class MIPModel:
             #x_r_f_g
             variables=["x_%s_%s_%s"%(entity.name,arc[0].name,arc[1].name) for entity in self.entities for arc in entity.partialGraph.edges]
             self.problem.variables.add(names=variables,types=['I']*len(variables),lb=[0]*len(variables),ub=[entity.Nb for entity in self.entities for arc in entity.partialGraph.edges])
-            #delay_f (approximate passenger delay)
-            variables=["delay_%s"%node1.name for node1 in self.S.FNodes]
-            self.problem.variables.add(names=variables,lb=[0]*(len(variables)),types=['C']*(len(variables)))
 
         elif "PAX" in self.type2entity:
             #x_r_f_g
             variables=["x_%s_%s_%s"%(entity.name,arc[0].name,arc[1].name) for entity in self.entities for arc in entity.partialGraph.edges]
             self.problem.variables.add(names=variables,types=['B']*len(variables))
-            #delay_r (indiviual passenger delay)
-            variables=["delay_%s"%entity.name for entity in self.type2entity["PAX"]]
-            self.problem.variables.add(names=variables,lb=[0]*(len(variables)),types=['C']*(len(variables)))            
         
     def passConstraintsToCplex(self):
-        self.problem.variables.add(names=self.itinVariables,types=['B']*len(self.itinVariables))
+        if "ITIN" in self.type2entity:
+            self.problem.variables.add(names=self.itinVariables,types=['B']*len(self.itinVariables))
+            
         lin_exp,rhs,senses,names=zip(*self.constraintData)
         self.problem.linear_constraints.add(lin_expr=lin_exp,rhs=rhs,senses=senses,names=names)   
         self.problem.objective.set_linear(self.objectiveData)
-        self.problem.objective.set_offset(-sum([node.ScheFuelConsump for node in self.S.FNodes])*self.S.config["FUELCOSTPERKG"])
-
+        self.problem.objective.set_offset(-sum([node.ScheFuelConsump for node in self.S.FNodes])*self.S.config["FUELCOSTPERKG"])        
+        self.problem.set_problem_name("MIP")
+        self.problem.set_log_stream(None)
+        self.problem.set_warning_stream(None)
+    
     def setFlowBalanceConstraint(self):
         print("Initiate Flow Balance Constraint")
         for entity in self.entities:
@@ -196,11 +195,18 @@ class MIPModel:
     def addDelayCost(self,delaytype):
         print("Initiate Delay Cost")
         if delaytype=="approx":
+            #delay_f (approximate passenger delay)
+            variables=["delay_%s"%node1.name for node1 in self.S.FNodes]
+            self.problem.variables.add(names=variables,lb=[0]*(len(variables)),types=['C']*(len(variables)))                        
             for node1 in self.S.FNodes:
                 self.constraintData.append(([["at_%s"%node1.name,"delay_%s"%node1.name],[1,-1]],node1.ScheduleAT,'L',"ApproxDelay_%s"%node1.name))
                 arrivalPax=sum([self.S.itin2pax[itin] for itin,dest in self.S.itin2destination.items() if dest==node1.Des])
                 self.objectiveData+=[("delay_%s"%node1.name,arrivalPax*self.S.config["DELAYCOST"])]
+
         elif delaytype=="actual":
+            #delay_r (indiviual passenger delay)
+            variables=["delay_%s"%entity.name for entity in self.type2entity["PAX"]]
+            self.problem.variables.add(names=variables,lb=[0]*(len(variables)),types=['C']*(len(variables)))                        
             for entity in self.type2entity["PAX"]:
                 for node1 in entity.partialGraph.predecessors(entity.TNode):
                     LATf=node1.LAT
