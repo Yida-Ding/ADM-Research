@@ -17,14 +17,14 @@ def executeModel(dataset,scenario,mode):
     if not os.path.exists("Results/%s/%s"%(scenario,mode["MODEID"])):
         os.makedirs("Results/%s/%s"%(scenario,mode["MODEID"]))
 
-    S=Scenario(dataset,scenario)
+    startTime=time.time()
+    S=Scenario(dataset,scenario,mode["PAXTYPE"])
     type2entity={}
     for etype in ["ACF","CRW",mode["PAXTYPE"]]:
         pscahelper=PSCAHelper(S,etype,mode["BOUNDETYPES"][etype],mode["SIZEBOUND"])
         type2entity[etype]=pscahelper.entities
         pscahelper.getGraphReductionStat(mode["MODEID"])
 
-    startTime=time.time()
     model=MIPModel(S,type2entity)
     model.setFlowBalanceConstraint()
     model.setNodeClosureConstraint()
@@ -43,7 +43,7 @@ def executeModel(dataset,scenario,mode):
     
     model.problem.parameters.timelimit.set(mode["TIMELIMIT"])
     model.problem.parameters.mip.tolerances.mipgap.set(mode["MIPTOLERANCE"])
-#    print(model.problem.get_stats())
+    print(model.problem.get_stats())
     model.problem.solve()
     finalTime=time.time()
     
@@ -64,24 +64,22 @@ def executeModel(dataset,scenario,mode):
     print("Gap:",gap," Runtime:",finalTime-startTime)
 
 
-bounds=[25,50,75,100]
-for i,bound in enumerate(bounds):
-    
-    mode={"MODEID":"Mode%d"%i,     # the directory name of mode setting
-          "PAXTYPE":"ITIN",      # (ITIN/PAX) aggregate the passengers of the same itinarery as an entity, or leave the passengers as individual entities
-          "DELAYTYPE":"approx", # (approx/actual) calculate the delay cost by approximation method regarding the delay of flight (section 3.10.1), or by actual method regarding delay of passenger (section 3.10.3); Note that the combination ("ITIN","actual") is not allowed
-          "CRSTIMECOMP":1,      # (0/1) allowed to compress the cruise time (1) or not (0) 
-          "BOUNDETYPES":{
-              "ACF":1,
-              "CRW":1,
-              "ITIN":1,
-              "PAX":1   },      # (0/1) bound the size of partial network of each entity type (1) or not (0)
-          "SIZEBOUND":bound,       # the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
-          "MIPTOLERANCE":0.01,  # the relative mip tolerance of optimality gap
-          "TIMELIMIT":1e5,      # the limit of duration in seconds for cplex computation
-          }
-            
-    executeModel("ACF400","ACF400-SC1",mode)
+mode={"MODEID":"Mode1",     # the directory name of mode setting
+      "PAXTYPE":"ITIN",      # (ITIN/PAX) aggregate the passengers of the same itinarery as an entity, or leave the passengers as individual entities
+      "DELAYTYPE":"approx", # (approx/actual) calculate the delay cost by approximation method regarding the delay of flight (section 3.10.1), or by actual method regarding delay of passenger (section 3.10.3); Note that the combination ("ITIN","actual") is not allowed
+      "CRSTIMECOMP":1,      # (0/1) allowed to compress the cruise time (1) or not (0) 
+      "BOUNDETYPES":{
+          "ACF":1,
+          "CRW":1,
+          "ITIN":1,
+          "PAX":1   },      # (0/1) bound the size of partial network of each entity type (1) or not (0)
+      "SIZEBOUND":50,       # the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
+      "MIPTOLERANCE":0.01,  # the relative mip tolerance of optimality gap
+      "TIMELIMIT":1e5,      # the limit of duration in seconds for cplex computation
+      }
+
+for i in range(50,450,50):
+    executeModel("ACF%d"%i,"ACF%d-SC1"%i,mode)
         
 
 

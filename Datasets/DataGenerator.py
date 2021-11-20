@@ -170,40 +170,42 @@ def generateDataset(direname,config,seed=0):
         os.makedirs(direname)
     pd.DataFrame(resd).to_csv(direname+"/Schedule.csv",index=False)
     pd.DataFrame(resditin).to_csv(direname+"/Itinerary.csv",index=False)
-    pd.DataFrame(resdtime).to_csv(direname+"/Duration.csv",index=False)
-    pd.DataFrame(resdpax).to_csv(direname+"/Passenger.csv",index=False)
+#    pd.DataFrame(resdtime).to_csv(direname+"/Duration.csv",index=False)
+#    pd.DataFrame(resdpax).to_csv(direname+"/Passenger.csv",index=False)
     
     with open(direname+"/Config.json", "w") as outfile:
         json.dump(config, outfile, indent = 4)
 
-config={"MAXAC":400, # Number of aicraft trajectories to generate
-        "MAXACT":1, # Number of unique aircraft types
-        "MAXAPT":1600, # Number of airports
-        "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
-        "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
-        "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
-        "ACTAVGSPEED":800/3600, # Average speed of aircraft used to estimate flight duration
-        "ACMINCONTIME":30*60, # Minimum connection time for aircraft
-        "ACMAXCONTIME":420*60, # Maximum connection time for aircraft
-        "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
-        "CREWMAXREPTIME":8*3600, # Time for crew to have a break "from a tail"
-        "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
-        "STARTTIME":5*3600, #start at 5AM
-        "ENDTIME":26*3600, # stop at 2AM next day
-        "DIRECTITINPROB":0.85, # probability of direct itinerary
-        "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
-        "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6)
-        "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
-        "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance
-        "FLIGHTCANCELCOST":2000000, # Flight cancellation cost in dollar on page 22 (raised to 100 times)
-        "FUELCOSTPERKG":0.478/0.454, # Jet fuel price per kg on page 22
-        "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel consumption function parameters in 2014 paper
-        "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
-        "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
-        "FOLLOWSCHEDULECOSTPAX":-0.1 # Negative cost to follow schedule arc for passenger on page 15
-        }
-
-generateDataset("ACF%d"%config["MAXAC"],config,seed=0)
+for i in range(50,450,50):
+    
+    config={"MAXAC":i, # Number of aicraft trajectories to generate
+            "MAXACT":1, # Number of unique aircraft types
+            "MAXAPT":4*i, # Number of airports
+            "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
+            "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
+            "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
+            "ACTAVGSPEED":800/3600, # Average speed of aircraft used to estimate flight duration
+            "ACMINCONTIME":30*60, # Minimum connection time for aircraft
+            "ACMAXCONTIME":420*60, # Maximum connection time for aircraft
+            "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
+            "CREWMAXREPTIME":8*3600, # Time for crew to have a break "from a tail"
+            "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
+            "STARTTIME":5*3600, #start at 5AM
+            "ENDTIME":26*3600, # stop at 2AM next day
+            "DIRECTITINPROB":0.85, # probability of direct itinerary
+            "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
+            "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6)
+            "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
+            "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance
+            "FLIGHTCANCELCOST":2000000, # Flight cancellation cost in dollar on page 22 (raised to 100 times)
+            "FUELCOSTPERKG":0.478/0.454, # Jet fuel price per kg on page 22
+            "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel consumption function parameters in 2014 paper
+            "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
+            "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
+            "FOLLOWSCHEDULECOSTPAX":-0.1 # Negative cost to follow schedule arc for passenger on page 15
+            }
+    
+    generateDataset("ACF%d"%config["MAXAC"],config,seed=0)
+            
         
     
-

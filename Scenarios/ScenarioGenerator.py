@@ -12,7 +12,6 @@ class Dataset:
         self.direname=direname
         self.dfschedule=pd.read_csv("../Datasets/"+direname+"/Schedule.csv",na_filter=None)
         self.dfitinerary=pd.read_csv("../Datasets/"+direname+"/Itinerary.csv",na_filter=None)
-        self.dfduration=pd.read_csv("../Datasets/"+direname+"/Duration.csv",na_filter=None)        
         with open("../Datasets/"+direname+"/Config.json", "r") as outfile:
             self.config=json.load(outfile)
         
@@ -52,12 +51,13 @@ class ScenarioGenerator:
     def getRandomFlightDelay(self,k):
         selflights=random.sample(self.D.flights,k)
         return {flight:random.randint(100,1000) for flight in selflights}
-        
-SC1=ScenarioGenerator("ACF80","SC1",0)
-data=SC1.getRandomFlightDelay(20)
-SC1.setFlightDepartureDelay(data)
-SC1.setDelayedReadyTime({})
 
+for i in range(50,450,50):
+    SC1=ScenarioGenerator("ACF%d"%i,"SC1",1)
+    data=SC1.getRandomFlightDelay(10)
+    SC1.setFlightDepartureDelay(data)
+    SC1.setDelayedReadyTime({})
+    
 
 
 

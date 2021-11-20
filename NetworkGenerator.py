@@ -12,10 +12,8 @@ import time
 import numpy as np
 import heapq as hq
 
-from NetworkVisualizer import Visualizer
-
 class Scenario:
-    def __init__(self,direname,scname):
+    def __init__(self,direname,scname,paxtype):
         self.direname=direname
         self.scname=scname
         #load from Dataset
@@ -23,7 +21,7 @@ class Scenario:
             self.config=json.load(outfile)
         self.dfitinerary=pd.read_csv("Datasets/"+direname+"/Itinerary.csv",na_filter=None)
         self.dfschedule=pd.read_csv("Datasets/"+direname+"/Schedule.csv",na_filter=None)
-        self.dfpassenger=pd.read_csv("Datasets/"+direname+"/Passenger.csv",na_filter=None)
+#        self.dfpassenger=pd.read_csv("Datasets/"+direname+"/Passenger.csv",na_filter=None)
         self.flight2scheduleAT={row.Flight:row.SAT for row in self.dfschedule.itertuples()}
         self.flight2scheduleDT={row.Flight:row.SDT for row in self.dfschedule.itertuples()}
         
@@ -51,25 +49,24 @@ class Scenario:
             self.itin2pax[row.Itinerary]=row.Pax
             for flight in flights:
                 self.flight2itinNum[flight].append((row.Itinerary,row.Pax))
-        
-        self.paxname2flights,self.paxname2itin,self.flight2paxnames={},{},defaultdict(list)
-        for row in self.dfpassenger.itertuples():
-            flights=row.Flights.split('-')
-            self.paxname2flights[row.Pax]=flights
-            self.paxname2itin[row.Pax]=row.Itinerary
-            for flight in flights:
-                self.flight2paxnames[flight].append(row.Pax)        
+                    
+        if paxtype=="PAX":
+            self.paxname2flights,self.paxname2itin,self.flight2paxnames={},{},defaultdict(list)
+            for row in self.dfpassenger.itertuples():
+                flights=row.Flights.split('-')
+                self.paxname2flights[row.Pax]=flights
+                self.paxname2itin[row.Pax]=row.Itinerary
+                for flight in flights:
+                    self.flight2paxnames[flight].append(row.Pax)        
         
         self.itin2destination={itin:self.name2FNode[self.itin2flights[itin][-1]].Des for itin in self.itin2flights.keys()}
         self.tail2capacity={tail:df_cur["Capacity"].tolist()[0] for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
-        self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,"PAX":self.paxname2flights,"ITIN":self.itin2flights}
+        self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,paxtype:self.itin2flights if paxtype=="ITIN" else self.paxname2flights}
 
         #Generate connectable digraph for flight nodes
         self.connectableGraph=nx.DiGraph()
-        for node1 in self.FNodes:
-            for node2 in self.FNodes:
-                if node1.Des==node2.Ori and node2.LDT>=node1.EAT+node1.CT:
-                    self.connectableGraph.add_edge(node1,node2)
+        connectableEdges=[(node1,node2) for node1 in self.FNodes for node2 in self.FNodes if node1.Des==node2.Ori and node2.LDT>=node1.EAT+node1.CT]
+        self.connectableGraph.add_edges_from(connectableEdges)
                     
     def plotEntireFlightNetwork(self,ax):
         colormap=['orange' if node.name in self.disruptedFlights else 'lightblue' for node in self.connectableGraph.nodes]
@@ -132,49 +129,26 @@ class Entity:
         self.name2Node=S.name2FNode.copy()
         self.name2Node.update({"S-"+name:self.SNode,"T-"+name:self.TNode})
         self.Node2name={node:name for name,node in self.name2Node.items()}
-        
-        self.connectableGraph=S.connectableGraph.copy()
+                        
+        descendants,ancestors,newedges=set(),set(),set()
         for FNode in S.connectableGraph:
             if self.SNode.Des==FNode.Ori and FNode.LDT>=self.SNode.EAT:
-                self.connectableGraph.add_edge(self.SNode,FNode)
+                descendants.add(FNode)
+                newedges.add((self.SNode,FNode))
+                descendants=descendants|nx.descendants(S.connectableGraph,FNode)
             if FNode.Des==self.TNode.Ori and self.TNode.LDT>=FNode.EAT:
-                self.connectableGraph.add_edge(FNode,self.TNode)
+                ancestors.add(FNode)
+                newedges.add((FNode,self.TNode))
+                ancestors=ancestors|nx.ancestors(S.connectableGraph,FNode)
         
-        self.partialGraph=nx.DiGraph()
-        self.generatePath([self.SNode])     #PNGA algorithm
+        partialNodes=(descendants&ancestors)|set([self.SNode,self.TNode])
+        self.partialGraph=nx.DiGraph(S.connectableGraph.subgraph(partialNodes))
+        self.partialGraph.add_edges_from(newedges)
+        
         self.schedNodes=[self.SNode]+self.FNodes+[self.TNode]
         self.schedArcs={(self.schedNodes[i],self.schedNodes[i+1]) for i in range(len(self.schedNodes)-1)}
         self.schedArcs2=self.schedArcs|{(y,x) for (x,y) in self.schedArcs}
         self.orig_nodes,self.orig_arcs=self.partialGraph.number_of_nodes(),self.partialGraph.number_of_edges()
-        
-    def generatePath(self,tempPath):
-        lastNode=tempPath[-1]
-        if (self.etype=="PAX" or self.etype=="ITIN") and lastNode.Des==self.Des:
-            return
-        for nextNode in self.connectableGraph.successors(lastNode):
-            if nextNode not in tempPath:
-                tempPathc=tempPath.copy()+[nextNode]
-                if nextNode in self.partialGraph.nodes:
-                    nx.add_path(self.partialGraph,tempPathc)
-                else:
-                    if nextNode.Des==self.Des:
-                        nx.add_path(self.partialGraph,tempPathc+[self.TNode])
-                    self.generatePath(tempPathc)
-        
-    def eliminateArc(self,arc):
-        if arc in self.partialGraph.edges:
-            self.partialGraph.remove_edge(*arc)
-        if arc[0] in self.partialGraph.nodes and self.partialGraph.out_degree(arc[0])==0:
-            self.eliminateNode(arc[0])
-        if arc[1] in self.partialGraph.nodes and self.partialGraph.in_degree(arc[1])==0:
-            self.eliminateNode(arc[1])
-    
-    def eliminateNode(self,node):
-        arcset=set(self.partialGraph.in_edges(node))|set(self.partialGraph.out_edges(node))
-        if node in self.partialGraph.nodes:
-            self.partialGraph.remove_node(node)
-        for arc in arcset:
-            self.eliminateArc(arc)
           
     def plotPartialNetwork(self,ax):
         edgecolor=['blue' if edge in self.schedArcs else 'lightgrey' for edge in self.partialGraph.edges]
@@ -182,7 +156,6 @@ class Entity:
         nodelabel={node:self.Node2name[node] for node in self.partialGraph.nodes}
         nx.draw_circular(self.partialGraph,labels=nodelabel,with_labels=True,node_color=nodecolor,edge_color=edgecolor,ax=ax)
         ax.set_title("Partial Network of %s"%self.name)
-            
 
 class PSCAHelper:
     def __init__(self,S,etype,isbound,sizebound=None):
@@ -202,7 +175,7 @@ class PSCAHelper:
         if self.isbound:
             print("Initiate %s Reduced Partial Graphs"%self.etype)
             self.controlPartialGraphSize()
-            
+                
     def controlPartialGraphSize(self):        
         #merge the partial graphs of the same entity type
         self.etypeGraph=nx.Graph()
@@ -220,22 +193,36 @@ class PSCAHelper:
             node2distance=nx.single_source_dijkstra_path_length(self.etypeGraph,drpNode,cutoff=None,weight='weight')
             self.node2distDrp.update({node:dis for node,dis in node2distance.items() if node not in self.node2distDrp or self.node2distDrp[node]>dis})
         
-        #iteratively remove arcs and nodes based on arc value
         for entity in self.entities:
+            reduceGraph=nx.DiGraph()
+            reduceGraph.add_edges_from(entity.schedArcs)
             selnodes=set(self.S.FNodes)-set(entity.FNodes)
-            valueWithArc=[]
-            for ind,arc in enumerate(entity.partialGraph.edges):
-                if arc[0].ntype=="SNode" or arc[1].ntype=="TNode":
-                    valueWithArc.append((0,ind,arc))
-                elif arc[0] in selnodes or arc[1] in selnodes:
-                    valueWithArc.append((-np.mean([self.node2distDrp.get(arc[0],1),self.node2distDrp.get(arc[1],1)]),ind,arc))
-                else:   # the schedule arcs fall here
-                    valueWithArc.append((0,ind,arc))
-                        
-            hq.heapify(valueWithArc)
-            while entity.partialGraph.number_of_edges()>self.sizebound:
-                value,ind,arc=hq.heappop(valueWithArc)
-                entity.eliminateArc(arc)
+            valueArcs=[(np.mean([self.node2distDrp.get(arc[0],1),self.node2distDrp.get(arc[1],1)]),ind,arc) if arc[0] in selnodes or arc[1] in selnodes else (0,ind,arc) for ind,arc in enumerate(entity.partialGraph.edges)]
+            
+            #revised size control algorithm: rebuild the path which contains arcs of small value until the size of reduceGraph is larger than the bound
+            waitingArcs=[]
+            hq.heapify(valueArcs)
+            hq.heapify(waitingArcs)
+            bound=min(entity.partialGraph.number_of_edges(),self.sizebound)
+            while reduceGraph.number_of_edges()<bound:
+                if len(valueArcs)!=0:
+                    val,ind,arc=hq.heappop(valueArcs)
+                elif len(waitingArcs)!=0:
+                    val,ind,arc=hq.heappop(waitingArcs)
+                    reduceGraph.add_edge(*arc)
+                    continue
+                    
+                if nx.has_path(entity.partialGraph,entity.SNode,arc[0]) and nx.has_path(entity.partialGraph,arc[1],entity.TNode):
+                    sourcepath=nx.shortest_path(entity.partialGraph,source=entity.SNode,target=arc[0])
+                    targetpath=nx.shortest_path(entity.partialGraph,source=arc[1],target=entity.TNode)
+                    reduceGraph.add_edge(*arc)
+                    nx.add_path(reduceGraph,sourcepath)
+                    nx.add_path(reduceGraph,targetpath)                    
+                else:
+                    hq.heappush(waitingArcs,(val,ind,arc))
+            
+            entity.partialGraph=reduceGraph
+            print(entity.name)
                 
     def getGraphReductionStat(self,modeid):
         resd=defaultdict(list)
@@ -260,7 +247,9 @@ class PSCAHelper:
         nx.draw_circular(self.etypeGraph,labels=nodelabel,with_labels=True,node_color=nodecolor,edge_color=edgecolor,ax=ax)
         ax.set_title("Network of %s"%self.etype)
 
-
-
-
-
+#S=Scenario("ACF400","ACF400-SC1","ITIN")
+#E=Entity(S,"T10","ACF")
+#print(E.partialGraph)
+#fig,axes=plt.subplots(1,2,figsize=(12,5))
+#E.plotPartialNetwork(axes[0])
+#S.plotEntireFlightNetwork(axes[1])

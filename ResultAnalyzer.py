@@ -5,15 +5,18 @@ import cplex
 from collections import defaultdict
 from lxml import etree
 from NetworkGenerator import Scenario
+import matplotlib.pyplot as plt
 
 class Analyzer:
     def __init__(self,dataset,scenario,modeid):
-        self.S=Scenario(dataset,scenario)
         self.scenario=scenario
         self.dataset=dataset
         self.modeid=modeid
         with open("Results/%s/%s/Mode.json"%(self.scenario,self.modeid),"r") as outfile:
-            self.mode=json.load(outfile)
+            self.mode=json.load(outfile)                        
+        self.S=Scenario(dataset,scenario,self.mode["PAXTYPE"])
+    
+    def parseOutputData(self):
         with open("Results/%s/%s/Variables.json"%(self.scenario,self.modeid),"r") as outfile:
             self.variable2value=json.load(outfile)            
         with open("Results/%s/%s/Coefficients.json"%(self.scenario,self.modeid),"r") as outfile:
@@ -21,7 +24,6 @@ class Analyzer:
         tree=etree.parse("Results/%s/%s/ModelSolution.sol"%(self.scenario,self.modeid))
         for x in tree.xpath("//header"):
             self.objective=float(x.attrib["objectiveValue"])
-            
         self.tail2graph={tail:nx.DiGraph() for tail in self.S.tail2flights}
         self.flight2crew,self.flight2deptime,self.flight2arrtime,self.flight2crstime,self.flight2crstimecomp={},{},{},{},{}
         self.flight2numpax,self.flight2paxname,self.flight2itinNum=defaultdict(int),defaultdict(list),defaultdict(list)
@@ -165,11 +167,59 @@ class Analyzer:
         print('-'*60)
         print(dfcost)
         
-analyzer=Analyzer("ACF2","ACF2-SC1","Mode1")
-analyzer.displayScheduleAndRecovery()
-analyzer.getReroutingActions()
-analyzer.getCostTerms()
+    def getRunTimeAndGap(self):
+        runtime=self.variable2value["runtime"]
+        gap=self.variable2value["optimalityGap"]
+        return runtime,gap
+        
 
+def writeRuntimeAndGap(direnames):
+    dire2runtime,dire2gap={},{}
+    for direname in direnames:
+        analyzer=Analyzer(direname,direname+'-SC1',"Mode1")
+        runtime,gap=analyzer.getRunTimeAndGap()
+        dire2runtime[direname]=runtime
+        dire2gap[direname]=gap
+    with open("Results/Runtime.json","w") as outfile:
+        json.dump(dire2runtime,outfile,indent=4)
+    with open("Results/Gap.json","w") as outfile:
+        json.dump(dire2gap,outfile,indent=4)
+
+def plotRuntime(ax,direnames):
+    with open("Results/Runtime.json","r") as outfile:
+        dire2runtime=json.load(outfile)
+    runtimes=[dire2runtime[direname] for direname in direnames]
+    ax.plot(direnames,runtimes)
+    ax.set_xlabel("Dataset",fontsize=15)
+    ax.set_ylabel("Runtime(s)",fontsize=15)
+    
+def plotGap(ax,direnames):
+    with open("Results/Gap.json","r") as outfile:
+        dire2gap=json.load(outfile)
+    gaps=[dire2gap[direname] for direname in direnames]
+    ax.plot(direnames,gaps)
+    ax.set_xlabel("Dataset",fontsize=15)
+    ax.set_ylabel("Gaps",fontsize=15)
+
+def plotCrewAndItin(ax1,ax2,direnames):
+    itins,crews=[],[]
+    for direname in direnames:
+        analyzer=Analyzer(direname,direname+'-SC1',"Mode1")
+        itins.append(len(analyzer.S.itin2flights.keys()))
+        crews.append(len(analyzer.S.crew2flights.keys()))
+    ax1.plot(direnames,itins)
+    ax2.plot(direnames,crews)
+    ax1.set_xlabel("Dataset",fontsize=15)
+    ax1.set_ylabel("Itins",fontsize=15)
+    ax2.set_xlabel("Dataset",fontsize=15)
+    ax2.set_ylabel("Crews",fontsize=15)
+
+fig,axes=plt.subplots(2,2,figsize=(20,10))
+direnames=["ACF%d"%i for i in range(50,450,50)]
+
+plotRuntime(axes[0][0],direnames)
+plotGap(axes[0][1],direnames)
+plotCrewAndItin(axes[1][0],axes[1][1],direnames)
 
 
 
