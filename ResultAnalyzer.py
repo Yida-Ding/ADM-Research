@@ -214,12 +214,10 @@ def plotCrewAndItin(ax1,ax2,direnames):
     ax2.set_xlabel("Dataset",fontsize=15)
     ax2.set_ylabel("Crews",fontsize=15)
 
-fig,axes=plt.subplots(2,2,figsize=(20,10))
-direnames=["ACF%d"%i for i in range(50,450,50)]
-
-plotRuntime(axes[0][0],direnames)
-plotGap(axes[0][1],direnames)
-plotCrewAndItin(axes[1][0],axes[1][1],direnames)
+analyzer=Analyzer("ACF2","ACF2-SC1","Mode1")
+analyzer.parseOutputData()
+analyzer.displayScheduleAndRecovery()
+analyzer.getReroutingActions()
 
 
 

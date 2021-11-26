@@ -21,7 +21,7 @@ class Scenario:
             self.config=json.load(outfile)
         self.dfitinerary=pd.read_csv("Datasets/"+direname+"/Itinerary.csv",na_filter=None)
         self.dfschedule=pd.read_csv("Datasets/"+direname+"/Schedule.csv",na_filter=None)
-#        self.dfpassenger=pd.read_csv("Datasets/"+direname+"/Passenger.csv",na_filter=None)
+        self.dfpassenger=pd.read_csv("Datasets/"+direname+"/Passenger.csv",na_filter=None)
         self.flight2scheduleAT={row.Flight:row.SAT for row in self.dfschedule.itertuples()}
         self.flight2scheduleDT={row.Flight:row.SDT for row in self.dfschedule.itertuples()}
         

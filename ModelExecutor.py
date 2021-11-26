@@ -17,7 +17,7 @@ def executeModel(dataset,scenario,mode):
     if not os.path.exists("Results/%s/%s"%(scenario,mode["MODEID"])):
         os.makedirs("Results/%s/%s"%(scenario,mode["MODEID"]))
 
-    startTime=time.time()
+    T1=time.time()
     S=Scenario(dataset,scenario,mode["PAXTYPE"])
     type2entity={}
     for etype in ["ACF","CRW",mode["PAXTYPE"]]:
@@ -25,6 +25,7 @@ def executeModel(dataset,scenario,mode):
         type2entity[etype]=pscahelper.entities
         pscahelper.getGraphReductionStat(mode["MODEID"])
 
+    T2=time.time()
     model=MIPModel(S,type2entity)
     model.setFlowBalanceConstraint()
     model.setNodeClosureConstraint()
@@ -45,14 +46,14 @@ def executeModel(dataset,scenario,mode):
     model.problem.parameters.mip.tolerances.mipgap.set(mode["MIPTOLERANCE"])
     print(model.problem.get_stats())
     model.problem.solve()
-    finalTime=time.time()
+    T3=time.time()
     
     resdire="Results/%s/%s/"%(scenario,mode["MODEID"])
     model.problem.solution.write(resdire+"ModelSolution.sol")
     variables,values,coeffs,offset,gap=model.problem.variables.get_names(),model.problem.solution.get_values(),model.problem.objective.get_linear(),model.problem.objective.get_offset(),model.problem.solution.MIP.get_mip_relative_gap()
     variable2coeff={variables[i]:coeffs[i] for i in range(len(variables))}
     variable2value={variables[i]:values[i] for i in range(len(values))}
-    variable2value.update({"offset":offset,"runtime":finalTime-startTime,"optimalityGap":gap})
+    variable2value.update({"offset":offset,"prepareTime":T2-T1,"cplexTime":T3-T2,"optimalityGap":gap})
     
     with open(resdire+"Variables.json","w") as outfile:
         json.dump(variable2value,outfile,indent=4)
@@ -61,25 +62,24 @@ def executeModel(dataset,scenario,mode):
     with open(resdire+"Mode.json","w") as outfile:
         json.dump(mode,outfile,indent=4)
     
-    print("Gap:",gap," Runtime:",finalTime-startTime)
+    print("Gap:",gap," prepareTime:",T2-T1," cplexTime",T3-T2)
 
 
 mode={"MODEID":"Mode1",     # the directory name of mode setting
-      "PAXTYPE":"ITIN",      # (ITIN/PAX) aggregate the passengers of the same itinarery as an entity, or leave the passengers as individual entities
-      "DELAYTYPE":"approx", # (approx/actual) calculate the delay cost by approximation method regarding the delay of flight (section 3.10.1), or by actual method regarding delay of passenger (section 3.10.3); Note that the combination ("ITIN","actual") is not allowed
+      "PAXTYPE":"PAX",      # (ITIN/PAX) aggregate the passengers of the same itinarery as an entity, or leave the passengers as individual entities
+      "DELAYTYPE":"actual", # (approx/actual) calculate the delay cost by approximation method regarding the delay of flight (section 3.10.1), or by actual method regarding delay of passenger (section 3.10.3); Note that the combination ("ITIN","actual") is not allowed
       "CRSTIMECOMP":1,      # (0/1) allowed to compress the cruise time (1) or not (0) 
       "BOUNDETYPES":{
           "ACF":1,
           "CRW":1,
           "ITIN":1,
           "PAX":1   },      # (0/1) bound the size of partial network of each entity type (1) or not (0)
-      "SIZEBOUND":50,       # the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
+      "SIZEBOUND":1000,       # the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
       "MIPTOLERANCE":0.01,  # the relative mip tolerance of optimality gap
-      "TIMELIMIT":1e5,      # the limit of duration in seconds for cplex computation
+      "TIMELIMIT":60,      # the limit of duration in seconds for cplex computation
       }
 
-for i in range(50,450,50):
-    executeModel("ACF%d"%i,"ACF%d-SC1"%i,mode)
+executeModel("ACF2","ACF2-SC1",mode)
         
 
 

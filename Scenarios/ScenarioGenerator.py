@@ -52,12 +52,10 @@ class ScenarioGenerator:
         selflights=random.sample(self.D.flights,k)
         return {flight:random.randint(100,1000) for flight in selflights}
 
-for i in range(50,450,50):
-    SC1=ScenarioGenerator("ACF%d"%i,"SC1",1)
-    data=SC1.getRandomFlightDelay(10)
-    SC1.setFlightDepartureDelay(data)
-    SC1.setDelayedReadyTime({})
-    
+SC1=ScenarioGenerator("ACF2","SC1",1)
+SC1.setFlightDepartureDelay({"F01":5400})
+SC1.setDelayedReadyTime({})
+
 
 
 
