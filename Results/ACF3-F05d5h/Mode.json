@@ -1,0 +1,15 @@
+{
+    "MODEID": "Mode1",
+    "PAXTYPE": "PAX",
+    "DELAYTYPE": "actual",
+    "CRSTIMECOMP": 0,
+    "BOUNDETYPES": {
+        "ACF": 0,
+        "CRW": 0,
+        "ITIN": 0,
+        "PAX": 0
+    },
+    "SIZEBOUND": 1000,
+    "MIPTOLERANCE": 0.01,
+    "TIMELIMIT": 10000
+}

@@ -93,18 +93,16 @@ class Dataset:
         ax.set_title("%sTrajectoriesAsTimeSpaceNetwork"%entity)
 
 
-direname="ACF5"
-with open(direname+"/Config.json", "r") as outfile:
-    config=json.load(outfile)
-
-dfschedule=pd.read_csv(direname+"/Schedule.csv",na_filter=None)
-usedaps=set(dfschedule["From"].tolist()+dfschedule["To"].tolist())
-D=Dataset(config,usedaps)
-
-#D.plotBasemap(conalpha=0.9).set_title("Airports and possible flight connections") # Visualize airports and connectable airport pairs
-D.plotEntityTrajectoriesOnMap(dfschedule,"Tail")
-#D.plotEntityTrajectoriesAsTimeSpaceNetwork(dfschedule,"Crew")
+def visualize(direname):
+    with open(direname+"/Config.json", "r") as outfile:
+        config=json.load(outfile)
+    dfschedule=pd.read_csv(direname+"/Schedule.csv",na_filter=None)
+    usedaps=set(dfschedule["From"].tolist()+dfschedule["To"].tolist())
+    D=Dataset(config,usedaps)    
+    D.plotBasemap(conalpha=0.9).set_title("Airports and possible flight connections") # Visualize airports and connectable airport pairs
+    D.plotEntityTrajectoriesOnMap(dfschedule,"Tail")
+    D.plotEntityTrajectoriesAsTimeSpaceNetwork(dfschedule,"Crew")
     
-
+visualize("ACF3")
 
 

@@ -82,8 +82,8 @@ class ItineraryHelper:
         self.itinPax[itin]=pax-leaveall
         
         
-def generateDataset(direname,config,seed=0):
-    random.seed(seed)
+def generateDataset(direname,config):
+    random.seed(config["SEED"])
     D=Dataset(config)
     crewHelper=CrewHelper(D)
     itinHelper=ItineraryHelper(D)
@@ -118,7 +118,7 @@ def generateDataset(direname,config,seed=0):
                 break
             fltname="F%02d"%flightind
             flightind+=1
-            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)
+            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)//20 # TODO: For simplicity
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
             itin=itinHelper.getAvailableItinerary(fltname,origin,destination,depTime,arrTime,pax)
             flights+=[(fltname,origin,destination,depTime,arrTime,cruiseTime,crew,distance,pax)]
@@ -139,7 +139,7 @@ def generateDataset(direname,config,seed=0):
             resd["Flight_time"].append(flight[4]-flight[3])
             resd["Cruise_time"].append(flight[5])
             resd["Distance"].append(flight[7])
-            resd["Capacity"].append(accap)
+            resd["Capacity"].append(accap//20) # TODO: For simplicity
             resd["Pax"].append(flight[8])
             resd["Timestring"].append(D.getTimeString(flight[3])+" -> "+D.getTimeString(flight[4]))
     
@@ -177,7 +177,7 @@ def generateDataset(direname,config,seed=0):
         json.dump(config, outfile, indent = 4)
 
     
-config={"MAXAC":2, # Number of aicraft trajectories to generate
+config={"MAXAC":3, # Number of aicraft trajectories to generate
         "MAXACT":1, # Number of unique aircraft types
         "MAXAPT":3, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
@@ -185,15 +185,15 @@ config={"MAXAC":2, # Number of aicraft trajectories to generate
         "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
         "ACTAVGSPEED":800/3600, # Average speed of aircraft used to estimate flight duration
         "ACMINCONTIME":30*60, # Minimum connection time for aircraft
-        "ACMAXCONTIME":420*60, # Maximum connection time for aircraft
+        "ACMAXCONTIME":200*60, # Maximum connection time for aircraft
         "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
-        "CREWMAXREPTIME":8*3600, # Time for crew to have a break "from a tail"
+        "CREWMAXREPTIME":4*3600, # Time for crew to have a break "from a tail"
         "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
         "STARTTIME":5*3600, #start at 5AM
         "ENDTIME":26*3600, # stop at 2AM next day
-        "DIRECTITINPROB":0.85, # probability of direct itinerary
-        "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
-        "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6)
+        "DIRECTITINPROB":1, # probability of direct itinerary
+        "TWOHOPITINPROB":0, # probability of two-hop itinerary
+        "CRSTIMECOMPPCT":0, # Cruise time compression limit in percentage (Page 6)
         "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
         "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance
         "FLIGHTCANCELCOST":2000000, # Flight cancellation cost in dollar on page 22 (raised to 100 times)
@@ -201,10 +201,10 @@ config={"MAXAC":2, # Number of aicraft trajectories to generate
         "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel consumption function parameters in 2014 paper
         "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
         "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
-        "FOLLOWSCHEDULECOSTPAX":-0.1 # Negative cost to follow schedule arc for passenger on page 15
+        "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
+        "SEED":10 # Random seed
         }
 
-generateDataset("ACF%d"%config["MAXAC"],config,seed=1)
-            
+generateDataset("ACF%d"%config["MAXAC"],config)
         
     

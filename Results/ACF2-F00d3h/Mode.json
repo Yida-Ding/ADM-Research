@@ -2,14 +2,14 @@
     "MODEID": "Mode1",
     "PAXTYPE": "PAX",
     "DELAYTYPE": "actual",
-    "CRSTIMECOMP": 1,
+    "CRSTIMECOMP": 0,
     "BOUNDETYPES": {
-        "ACF": 1,
-        "CRW": 1,
-        "ITIN": 1,
-        "PAX": 1
+        "ACF": 0,
+        "CRW": 0,
+        "ITIN": 0,
+        "PAX": 0
     },
     "SIZEBOUND": 1000,
     "MIPTOLERANCE": 0.01,
-    "TIMELIMIT": 60
+    "TIMELIMIT": 10000
 }

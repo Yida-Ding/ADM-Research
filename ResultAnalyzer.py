@@ -12,16 +12,16 @@ class Analyzer:
         self.scenario=scenario
         self.dataset=dataset
         self.modeid=modeid
-        with open("Results/%s/%s/Mode.json"%(self.scenario,self.modeid),"r") as outfile:
+        with open("Results/%s/Mode.json"%(self.scenario),"r") as outfile:
             self.mode=json.load(outfile)                        
         self.S=Scenario(dataset,scenario,self.mode["PAXTYPE"])
     
     def parseOutputData(self):
-        with open("Results/%s/%s/Variables.json"%(self.scenario,self.modeid),"r") as outfile:
+        with open("Results/%s/Variables.json"%(self.scenario),"r") as outfile:
             self.variable2value=json.load(outfile)            
-        with open("Results/%s/%s/Coefficients.json"%(self.scenario,self.modeid),"r") as outfile:
+        with open("Results/%s/Coefficients.json"%(self.scenario),"r") as outfile:
             self.variable2coeff=json.load(outfile)            
-        tree=etree.parse("Results/%s/%s/ModelSolution.sol"%(self.scenario,self.modeid))
+        tree=etree.parse("Results/%s/ModelSolution.sol"%(self.scenario))
         for x in tree.xpath("//header"):
             self.objective=float(x.attrib["objectiveValue"])
         self.tail2graph={tail:nx.DiGraph() for tail in self.S.tail2flights}
@@ -55,12 +55,11 @@ class Analyzer:
             elif terms[0]=='deltat' and round(value)!=0:
                 self.flight2crstimecomp[terms[1]]=round(value)
             elif terms[0]=='delay'and round(value)!=0:
+                print(terms,value)
                 self.flight2delay[terms[1]]=round(value)
             elif terms[0]=='fc' and round(value)!=0:
                 self.variable2fuel[variable]=value
-        
-        self.generateRecoveryPlan()
-        
+               
     def generateRecoveryPlan(self):
         resd=defaultdict(list)        
         for tail,tgraph in self.tail2graph.items():
@@ -83,7 +82,7 @@ class Analyzer:
                 resd["Delay"].append(self.getTimeString(arrdelay) if arrdelay>0 else '')
         
         self.dfrecovery=pd.DataFrame(resd).reset_index()
-        self.dfrecovery.to_csv("Results/%s/%s/Recovery.csv"%(self.scenario,self.modeid),index=False)
+        self.dfrecovery.to_csv("Results/%s/Recovery.csv"%(self.scenario),index=False)
         self.flight2recdict={dic['Flight']:dic for dic in self.dfrecovery.to_dict(orient='record')}
         
     def getTimeString(self,seconds):
@@ -152,18 +151,20 @@ class Analyzer:
     
     def getCostTerms(self):
         extraFuelCost=sum([self.variable2coeff[variable]*fuel for variable,fuel in self.variable2fuel.items()])+self.variable2value["offset"]
-        delayCost=sum([self.flight2delay.get(node1.name,0)*self.variable2coeff["delay_"+node1.name] for node1 in self.S.FNodes]) if self.mode["DELAYTYPE"]=="approx" else sum(self.flight2delay.values())*self.S.config["DELAYCOST"]
         cancelCost=sum([self.variable2coeff[variable]*value for variable,value in self.cancel2value.items()])
         followGain=sum([self.variable2coeff[variable]*value for variable,value in self.scheflow2value.items()])
-        totalCost=extraFuelCost+delayCost+cancelCost
-        values=[extraFuelCost,delayCost,cancelCost,totalCost,followGain,self.objective]
+        if self.mode["DELAYTYPE"]=="approx":
+            delayCost=sum([self.flight2delay.get(node1.name,0)*self.variable2coeff["delay_"+node1.name] for node1 in self.S.FNodes])
+        else: # actual
+            delayCost=sum(self.flight2delay.values())*self.S.config["DELAYCOST"]
         
         resd=defaultdict(list)
-        resd["Cost"]=["extra_fuel_cost","delay_cost","cancel_cost","total_cost","follow_gain","objective"]
+        values=[extraFuelCost,delayCost,cancelCost,followGain,self.objective]
+        resd["Cost"]=["extra_fuel_cost","delay_cost","cancel_cost","follow_gain","objective"]
         resd["Value"]=["%d"%value for value in values]
-        resd["Pct"]=["{0:.0%}".format(v/totalCost) for v in values[:4]]+["\\"]*2
+        resd["Pct"]=["{0:.0%}".format(v/self.objective) for v in values[:4]]+["\\"]*1
         dfcost=pd.DataFrame(resd)
-        dfcost.to_csv("Results/%s/%s/Cost.csv"%(self.scenario,self.modeid),index=False)
+        dfcost.to_csv("Results/%s/Cost.csv"%(self.scenario),index=False)
         print('-'*60)
         print(dfcost)
         
@@ -171,56 +172,20 @@ class Analyzer:
         runtime=self.variable2value["runtime"]
         gap=self.variable2value["optimalityGap"]
         return runtime,gap
-        
-
-def writeRuntimeAndGap(direnames):
-    dire2runtime,dire2gap={},{}
-    for direname in direnames:
-        analyzer=Analyzer(direname,direname+'-SC1',"Mode1")
-        runtime,gap=analyzer.getRunTimeAndGap()
-        dire2runtime[direname]=runtime
-        dire2gap[direname]=gap
-    with open("Results/Runtime.json","w") as outfile:
-        json.dump(dire2runtime,outfile,indent=4)
-    with open("Results/Gap.json","w") as outfile:
-        json.dump(dire2gap,outfile,indent=4)
-
-def plotRuntime(ax,direnames):
-    with open("Results/Runtime.json","r") as outfile:
-        dire2runtime=json.load(outfile)
-    runtimes=[dire2runtime[direname] for direname in direnames]
-    ax.plot(direnames,runtimes)
-    ax.set_xlabel("Dataset",fontsize=15)
-    ax.set_ylabel("Runtime(s)",fontsize=15)
     
-def plotGap(ax,direnames):
-    with open("Results/Gap.json","r") as outfile:
-        dire2gap=json.load(outfile)
-    gaps=[dire2gap[direname] for direname in direnames]
-    ax.plot(direnames,gaps)
-    ax.set_xlabel("Dataset",fontsize=15)
-    ax.set_ylabel("Gaps",fontsize=15)
+def mainResultAnalyzer(dataset,scenario,mode="Mode1"):
+    analyzer=Analyzer(dataset,scenario,mode)
+    analyzer.parseOutputData()
+    analyzer.generateRecoveryPlan()
+    analyzer.displayScheduleAndRecovery()
+    analyzer.getReroutingActions()
+    analyzer.getCostTerms()
 
-def plotCrewAndItin(ax1,ax2,direnames):
-    itins,crews=[],[]
-    for direname in direnames:
-        analyzer=Analyzer(direname,direname+'-SC1',"Mode1")
-        itins.append(len(analyzer.S.itin2flights.keys()))
-        crews.append(len(analyzer.S.crew2flights.keys()))
-    ax1.plot(direnames,itins)
-    ax2.plot(direnames,crews)
-    ax1.set_xlabel("Dataset",fontsize=15)
-    ax1.set_ylabel("Itins",fontsize=15)
-    ax2.set_xlabel("Dataset",fontsize=15)
-    ax2.set_ylabel("Crews",fontsize=15)
-
-analyzer=Analyzer("ACF2","ACF2-SC1","Mode1")
+analyzer=Analyzer("ACF2","ACF2-F00d3h","Mode1")
 analyzer.parseOutputData()
-analyzer.displayScheduleAndRecovery()
-analyzer.getReroutingActions()
-
-
-
-
-
-        
+analyzer.getCostTerms()
+    
+    
+    
+    
+    

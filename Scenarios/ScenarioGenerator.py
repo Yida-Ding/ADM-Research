@@ -10,9 +10,9 @@ import os
 class Dataset:
     def __init__(self,direname):
         self.direname=direname
-        self.dfschedule=pd.read_csv("../Datasets/"+direname+"/Schedule.csv",na_filter=None)
-        self.dfitinerary=pd.read_csv("../Datasets/"+direname+"/Itinerary.csv",na_filter=None)
-        with open("../Datasets/"+direname+"/Config.json", "r") as outfile:
+        self.dfschedule=pd.read_csv("Datasets/"+direname+"/Schedule.csv",na_filter=None)
+        self.dfitinerary=pd.read_csv("Datasets/"+direname+"/Itinerary.csv",na_filter=None)
+        with open("Datasets/"+direname+"/Config.json", "r") as outfile:
             self.config=json.load(outfile)
         
         self.flights=set(self.dfschedule["Flight"].tolist())
@@ -25,8 +25,8 @@ class ScenarioGenerator:
         self.direname=direname
         self.scname=scname
         self.D=Dataset(direname)
-        if not os.path.exists("%s-%s"%(self.direname,self.scname)):
-            os.makedirs("%s-%s"%(self.direname,self.scname))
+        if not os.path.exists("Scenarios/%s"%(self.scname)):
+            os.makedirs("Scenarios/%s"%(self.scname))
             
     def getTimeString(self,seconds):
         days,remainder=divmod(seconds,24*3600)
@@ -42,21 +42,18 @@ class ScenarioGenerator:
             temp=self.D.dfschedule.loc[self.D.dfschedule['Flight']==flight,["SDT","SAT"]]
             newSDT,newSAT=list(temp["SDT"])[0]+delayTime,list(temp["SAT"])[0]+delayTime
             dfdrpschedule.loc[dfdrpschedule['Flight']==flight,["SDT","SAT","Timestring","is_disrupted"]]=[newSDT,newSAT,self.getTimeString(newSDT)+" -> "+self.getTimeString(newSAT),1]        
-        dfdrpschedule.to_csv("%s-%s"%(self.direname,self.scname)+"/DrpSchedule.csv",index=False)
+        dfdrpschedule.to_csv("Scenarios/%s"%(self.scname)+"/DrpSchedule.csv",index=False)
     
     def setDelayedReadyTime(self,entity2delay={}):
-        with open("%s-%s"%(self.direname,self.scname)+"/DelayedReadyTime.json", "w") as outfile:
+        with open("Scenarios/%s"%(self.scname)+"/DelayedReadyTime.json", "w") as outfile:
             json.dump(entity2delay,outfile,indent=4)
     
     def getRandomFlightDelay(self,k):
         selflights=random.sample(self.D.flights,k)
         return {flight:random.randint(100,1000) for flight in selflights}
 
-SC1=ScenarioGenerator("ACF2","SC1",1)
-SC1.setFlightDepartureDelay({"F01":5400})
-SC1.setDelayedReadyTime({})
-
-
+    
+    
 
 
         

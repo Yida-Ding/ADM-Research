@@ -39,16 +39,17 @@ class Scenario:
         self.name2FNode={node.name:node for node in self.FNodes}
         self.FNode2name={node:node.name for node in self.FNodes}
         self.drpFNodes=[self.name2FNode[flight] for flight in self.disruptedFlights]
-        self.tail2flights={tail:df_cur.sort_values(by='SDT')["Flight"].tolist() for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
-        self.crew2flights={crew:df_cur.sort_values(by='SDT')["Flight"].tolist() for crew,df_cur in self.dfdrpschedule.groupby("Crew")}
+        self.tail2flights={tail:df_cur["Flight"].tolist() for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
+        self.crew2flights={crew:df_cur["Flight"].tolist() for crew,df_cur in self.dfdrpschedule.groupby("Crew")}
         
-        self.itin2flights,self.itin2pax,self.flight2itinNum={},{},defaultdict(list)
+        self.itin2flights,self.itin2pax,self.flt2pax,self.flight2itinNum={},{},{},defaultdict(list)
         for row in self.dfitinerary.itertuples():
             flights=row.Flight_legs.split('-')
             self.itin2flights[row.Itinerary]=flights
             self.itin2pax[row.Itinerary]=row.Pax
             for flight in flights:
                 self.flight2itinNum[flight].append((row.Itinerary,row.Pax))
+                self.flt2pax[flight]=row.Pax
                     
         if paxtype=="PAX":
             self.paxname2flights,self.paxname2itin,self.flight2paxnames={},{},defaultdict(list)
@@ -64,14 +65,25 @@ class Scenario:
         self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,paxtype:self.itin2flights if paxtype=="ITIN" else self.paxname2flights}
 
         #Generate connectable digraph for flight nodes
-        self.connectableGraph=nx.DiGraph()
+        self.connectableGraph,self.connectableGraphByName=nx.DiGraph(),nx.DiGraph()
         connectableEdges=[(node1,node2) for node1 in self.FNodes for node2 in self.FNodes if node1.Des==node2.Ori and node2.LDT>=node1.EAT+node1.CT]
+        connectableEdgesByNames=[(node1.name,node2.name) for (node1,node2) in connectableEdges]
         self.connectableGraph.add_edges_from(connectableEdges)
+        self.connectableGraphByName.add_edges_from(connectableEdgesByNames)
                     
     def plotEntireFlightNetwork(self,ax):
         colormap=['orange' if node.name in self.disruptedFlights else 'lightblue' for node in self.connectableGraph.nodes]
         nx.draw_circular(self.connectableGraph,labels=self.FNode2name,node_color=colormap,ax=ax)
-        ax.set_title("Entire Flight Network")
+        ax.set_title("Entire Flight Network")\
+        
+    def getTimeString(self,seconds):
+        days,remainder=divmod(seconds,24*3600)
+        hours,remainder=divmod(remainder,3600)
+        minutes,seconds=divmod(remainder,60)
+        s='{:02}:{:02}'.format(int(hours),int(minutes))
+        if days>0:
+            s+=" (+%d)"%days
+        return s
         
 class Node:
     def __init__(self,S,ntype="FNode",name=None,info=None):
@@ -85,6 +97,7 @@ class Node:
             self.SFT=S.flight2dict[name]["Flight_time"]
             self.LDT=self.SDT+S.config["MAXHOLDTIME"]
             self.LAT=self.SAT+S.config["MAXHOLDTIME"]
+            self.ScheduleDT=S.flight2scheduleDT[name]
             self.ScheduleAT=S.flight2scheduleAT[name]
             self.ScheCrsTime=S.flight2dict[name]["Cruise_time"]
             self.CrsTimeComp=int(self.ScheCrsTime*S.config["CRSTIMECOMPPCT"])
@@ -96,6 +109,8 @@ class Node:
             self.MaxCrsSpeed=self.CrsStageDistance/(S.flight2dict[name]["Cruise_time"]-self.CrsTimeComp)
             self.ScheFuelConsump=self.CrsStageDistance*(sum([S.config["FUELCONSUMPPARA"][i]*[(self.ScheCrsSpeed)**2,self.ScheCrsSpeed,(self.ScheCrsSpeed)**(-2),(self.ScheCrsSpeed)**(-3)][i] for i in range(4)]))
             self.Demand=0
+            self.fathers=[]  # VNS
+            self.children=[] # VNS
             
         elif ntype=="SNode" or ntype=="TNode":
             self.Ori,self.Des,self.EAT,self.LDT,self.CT,self.Demand=info
@@ -238,7 +253,7 @@ class PSCAHelper:
             resd["final_sdArc"].append(len(set(entity.partialGraph.edges)&set(entity.schedArcs)))
             resd["sdArc_reduce"].append("{0:.0%}".format((resd["orig_sdArc"][-1]-resd["final_sdArc"][-1])/resd["orig_sdArc"][-1]))
 
-        pd.DataFrame(resd).to_csv("Results/%s/%s/GraphStat-%s.csv"%(self.S.scname,modeid,self.etype),index=None)
+#        pd.DataFrame(resd).to_csv("Results/%s/%s/GraphStat-%s.csv"%(self.S.scname,modeid,self.etype),index=None)
         
     def plotEntityTypeNetwork(self,ax):
         edgecolor=['blue' if edge in self.schedArcs else 'lightgrey' for edge in self.etypeGraph.edges]
@@ -247,9 +262,3 @@ class PSCAHelper:
         nx.draw_circular(self.etypeGraph,labels=nodelabel,with_labels=True,node_color=nodecolor,edge_color=edgecolor,ax=ax)
         ax.set_title("Network of %s"%self.etype)
 
-#S=Scenario("ACF400","ACF400-SC1","ITIN")
-#E=Entity(S,"T10","ACF")
-#print(E.partialGraph)
-#fig,axes=plt.subplots(1,2,figsize=(12,5))
-#E.plotPartialNetwork(axes[0])
-#S.plotEntireFlightNetwork(axes[1])
