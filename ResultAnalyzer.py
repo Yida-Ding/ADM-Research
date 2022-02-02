@@ -43,7 +43,8 @@ class Analyzer:
                         self.flight2itinNum[terms[2]].append((terms[1],round(value)))
                         
             if terms[0]=="x" and self.variable2coeff[variable]!=0.0:
-                self.scheflow2value[variable]=value                    
+                self.scheflow2value[variable]=value              
+                print(variable)
             elif terms[0]=='z' and round(value)!=0:
                 self.cancel2value[variable]=value
             elif terms[0]=='dt':    
@@ -55,7 +56,6 @@ class Analyzer:
             elif terms[0]=='deltat' and round(value)!=0:
                 self.flight2crstimecomp[terms[1]]=round(value)
             elif terms[0]=='delay'and round(value)!=0:
-                print(terms,value)
                 self.flight2delay[terms[1]]=round(value)
             elif terms[0]=='fc' and round(value)!=0:
                 self.variable2fuel[variable]=value
@@ -80,6 +80,12 @@ class Analyzer:
                 resd["Timestring"].append(self.getTimeString(self.flight2deptime[flight])+" -> "+self.getTimeString(self.flight2arrtime[flight]))
                 arrdelay=round(resd["RAT"][-1]-self.S.flight2scheduleAT[flight])
                 resd["Delay"].append(self.getTimeString(arrdelay) if arrdelay>0 else '')
+                if flight in self.S.disruptedFlights:
+                    resd["DelayType"].append(1)
+                elif arrdelay>0:
+                    resd["DelayType"].append(2)
+                else:
+                    resd["DelayType"].append(0)
         
         self.dfrecovery=pd.DataFrame(resd).reset_index()
         self.dfrecovery.to_csv("Results/%s/Recovery.csv"%(self.scenario),index=False)
@@ -181,11 +187,7 @@ def mainResultAnalyzer(dataset,scenario,mode="Mode1"):
     analyzer.getReroutingActions()
     analyzer.getCostTerms()
 
-analyzer=Analyzer("ACF2","ACF2-F00d3h","Mode1")
-analyzer.parseOutputData()
-analyzer.getCostTerms()
     
-    
-    
-    
+analyzer=Analyzer("ACF4","ACF4-SC1","Mode1")
+analyzer.parseOutputData() 
     

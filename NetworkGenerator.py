@@ -253,7 +253,7 @@ class PSCAHelper:
             resd["final_sdArc"].append(len(set(entity.partialGraph.edges)&set(entity.schedArcs)))
             resd["sdArc_reduce"].append("{0:.0%}".format((resd["orig_sdArc"][-1]-resd["final_sdArc"][-1])/resd["orig_sdArc"][-1]))
 
-#        pd.DataFrame(resd).to_csv("Results/%s/%s/GraphStat-%s.csv"%(self.S.scname,modeid,self.etype),index=None)
+#        pd.DataFrame(resd).to_csv("Results/%s/GraphStat-%s.csv"%(self.S.scname,self.etype),index=None)
         
     def plotEntityTypeNetwork(self,ax):
         edgecolor=['blue' if edge in self.schedArcs else 'lightgrey' for edge in self.etypeGraph.edges]

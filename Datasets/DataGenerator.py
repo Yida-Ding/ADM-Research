@@ -177,15 +177,15 @@ def generateDataset(direname,config):
         json.dump(config, outfile, indent = 4)
 
     
-config={"MAXAC":3, # Number of aicraft trajectories to generate
-        "MAXACT":1, # Number of unique aircraft types
+config={"MAXAC":4, # Number of aicraft trajectories to generate
+        "MAXACT":2, # Number of unique aircraft types
         "MAXAPT":3, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
         "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
         "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
         "ACTAVGSPEED":800/3600, # Average speed of aircraft used to estimate flight duration
         "ACMINCONTIME":30*60, # Minimum connection time for aircraft
-        "ACMAXCONTIME":200*60, # Maximum connection time for aircraft
+        "ACMAXCONTIME":400*60, # Maximum connection time for aircraft
         "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
         "CREWMAXREPTIME":4*3600, # Time for crew to have a break "from a tail"
         "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
@@ -202,7 +202,7 @@ config={"MAXAC":3, # Number of aicraft trajectories to generate
         "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
         "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
         "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
-        "SEED":10 # Random seed
+        "SEED":3 # Random seed
         }
 
 generateDataset("ACF%d"%config["MAXAC"],config)

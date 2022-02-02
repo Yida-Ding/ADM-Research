@@ -1,19 +1,38 @@
+import shutil
 from Scenarios.ScenarioGenerator import ScenarioGenerator
 from ModelExecutor import mainModelExecutor
 from ResultAnalyzer import mainResultAnalyzer
 
-def main(dataset,dflight,dtime):
-    scenario=dataset+'-'+dflight+'d%dh'%dtime
+def delete(dataset,scenario):
+    shutil.rmtree("Scenarios/"+scenario)
+    shutil.rmtree("Results/"+scenario)
     
-    SC=ScenarioGenerator(dataset,scenario,1)
-    SC.setFlightDepartureDelay({dflight:3600*dtime})
+def main(dataset,scenario,seed=0):
+    SC=ScenarioGenerator(dataset,scenario,seed)
+    delayinfo=SC.getRandomFlightDelay(4)
+    SC.setFlightDepartureDelay(delayinfo)
     SC.setDelayedReadyTime({})
-    
-    mainModelExecutor(dataset,scenario)
-    mainResultAnalyzer(dataset,scenario)
+    try:
+        mainModelExecutor(dataset,scenario)
+        mainResultAnalyzer(dataset,scenario)
+    except: # cplex no solution error
+        shutil.rmtree("Scenarios/"+scenario)
+        shutil.rmtree("Results/"+scenario)
+    return delayinfo
 
-main("ACF2","F00",3)   
-#main("ACF3","F05",5)
+def runCPLEX(dataset,scenario):
+    try:
+        mainModelExecutor(dataset,scenario)
+        mainResultAnalyzer(dataset,scenario)
+    except: # cplex no solution error
+        shutil.rmtree("Scenarios/"+scenario)
+        shutil.rmtree("Results/"+scenario)
+        
+#delayinfo=main("ACF4","ACF4-SC6",10)
+#print("Delay:",delayinfo)
+        
+runCPLEX("ACF4","ACF4-SC1")
+
 
 
 

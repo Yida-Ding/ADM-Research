@@ -1,0 +1,6 @@
+Cost,Value,Pct
+extra_fuel_cost,0,-0%
+delay_cost,1966,103%
+cancel_cost,0,0%
+follow_gain,-64,-3%
+objective,1901,\
