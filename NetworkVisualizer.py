@@ -101,8 +101,10 @@ class Visualizer:
         plt.tight_layout()
         plt.axis('equal')
         plt.savefig("Results/%s/%s.png"%(V.scenario,title))
+        plt.close()
 
-V=Visualizer("ACF5","ACF4-SC1")
-#V.plotFlightNetwork(*V.getScheduleData())
-#V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
-V.plotFlightNetwork(*V.getRecoveryData("VNS"))
+for i in range(1,10):
+    V=Visualizer("ACF5","ACF5-SC%d"%i)
+    V.plotFlightNetwork(*V.getScheduleData())
+    V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
+    V.plotFlightNetwork(*V.getRecoveryData("VNS"))

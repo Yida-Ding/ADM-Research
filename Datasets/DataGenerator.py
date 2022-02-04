@@ -150,6 +150,10 @@ def generateDataset(direname,config):
         flightNames=[flight[0] for flight in flights]
         resditin["Itinerary"].append(itin)
         resditin["Flight_legs"].append("-".join(flightNames))
+        resditin["From"].append(flights[0][1])
+        resditin["To"].append(flights[-1][2])
+        resditin["SDT"].append(flights[0][3])
+        resditin["SAT"].append(flights[-1][4])
         resditin["Pax"].append(numPax)
         for i in range(numPax):
             resdpax["Pax"].append(itin+"P%02d"%i)
@@ -177,9 +181,9 @@ def generateDataset(direname,config):
         json.dump(config, outfile, indent = 4)
 
     
-config={"MAXAC":4, # Number of aicraft trajectories to generate
+config={"MAXAC":5, # Number of aicraft trajectories to generate
         "MAXACT":2, # Number of unique aircraft types
-        "MAXAPT":3, # Number of airports
+        "MAXAPT":5, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
         "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
         "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
@@ -191,8 +195,8 @@ config={"MAXAC":4, # Number of aicraft trajectories to generate
         "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
         "STARTTIME":5*3600, #start at 5AM
         "ENDTIME":26*3600, # stop at 2AM next day
-        "DIRECTITINPROB":1, # probability of direct itinerary
-        "TWOHOPITINPROB":0, # probability of two-hop itinerary
+        "DIRECTITINPROB":0.8, # probability of direct itinerary
+        "TWOHOPITINPROB":0.1, # probability of two-hop itinerary
         "CRSTIMECOMPPCT":0, # Cruise time compression limit in percentage (Page 6)
         "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
         "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance

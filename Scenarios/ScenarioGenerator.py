@@ -20,7 +20,7 @@ class Dataset:
         self.airports=set(self.dfschedule["From"].tolist()+self.dfschedule["To"].tolist())
         
 class ScenarioGenerator:        
-    def __init__(self,direname,scname,seed):
+    def __init__(self,direname,scname,seed=0):
         random.seed(seed)
         self.direname=direname
         self.scname=scname
@@ -52,9 +52,5 @@ class ScenarioGenerator:
         selflights=random.sample(self.D.flights,k)
         flight2hour={flight:random.randint(1,4) for flight in selflights}
         return {flight:hour*3600 for flight,hour in flight2hour.items()}
-
-    
-    
-
 
         

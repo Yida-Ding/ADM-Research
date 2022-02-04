@@ -42,14 +42,16 @@ class Scenario:
         self.tail2flights={tail:df_cur["Flight"].tolist() for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
         self.crew2flights={crew:df_cur["Flight"].tolist() for crew,df_cur in self.dfdrpschedule.groupby("Crew")}
         
-        self.itin2flights,self.itin2pax,self.flt2pax,self.flight2itinNum={},{},{},defaultdict(list)
+        self.itin2flights,self.itin2pax,self.flt2pax,self.flt2nonepax,self.flight2itinNum={},{},defaultdict(int),defaultdict(int),defaultdict(list)
         for row in self.dfitinerary.itertuples():
             flights=row.Flight_legs.split('-')
             self.itin2flights[row.Itinerary]=flights
             self.itin2pax[row.Itinerary]=row.Pax
             for flight in flights:
                 self.flight2itinNum[flight].append((row.Itinerary,row.Pax))
-                self.flt2pax[flight]=row.Pax
+                self.flt2pax[flight]+=row.Pax
+                if len(flights)>1 and flight!=flights[-1]:
+                    self.flt2nonepax[flight]+=row.Pax
                     
         if paxtype=="PAX":
             self.paxname2flights,self.paxname2itin,self.flight2paxnames={},{},defaultdict(list)

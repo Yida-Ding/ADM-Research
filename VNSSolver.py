@@ -23,6 +23,17 @@ class VNSSolver:
         self.skdQs=[[self.crew2srcdest[crew][0]]+flts+[self.crew2srcdest[crew][1]] for crew,flts in S.crew2flights.items()]
         self.k2func={1:"swap",2:"cross",3:"insert"}
         
+        # process dfitinerary
+        self.itins=self.S.dfitinerary["Itinerary"].tolist()
+        self.itin2skdflts,self.itin2od,self.itin2skdtime,self.itin2skdpax,self.flt2skditins={},{},{},{},defaultdict(list)
+        for row in self.S.dfitinerary.itertuples():
+            self.itin2skdflts[row.Itinerary]=row.Flight_legs.split('-')
+            self.itin2od[row.Itinerary]=(row.From,row.To)
+            self.itin2skdtime[row.Itinerary]=(row.SDT,row.SAT)
+            self.itin2skdpax[row.Itinerary]=row.Pax
+            for flt in row.Flight_legs.split('-'):
+                self.flt2skditins[flt].append(row.Itinerary)
+            
     def checkConnections(self,pairs): #pairs=[(P1,P2)] or [(Q1,Q2)]
         flag=True
         for pair in pairs:
@@ -98,7 +109,7 @@ class VNSSolver:
     
     def generateVNSRecoveryPlan(self,minPs,minQs,minRes):
         resd=defaultdict(list)
-        obj,timeDict,paxDict=minRes
+        obj,flt2time,paxDict=minRes
         flt2crew={flt:self.crews[i] for i,Q in enumerate(minQs) for flt in Q[1:-1]}
         for i,P in enumerate(minPs):
             for flight in P[1:-1]:
@@ -107,12 +118,12 @@ class VNSSolver:
                 resd["Crew"].append(flt2crew[flight])
                 resd["From"].append(self.node[flight].Ori)
                 resd["To"].append(self.node[flight].Des)
-                resd["RDT"].append(timeDict[flight][0])
-                resd["RAT"].append(timeDict[flight][1])
-                resd["Flight_time"].append(timeDict[flight][1]-timeDict[flight][0])
+                resd["RDT"].append(flt2time[flight][0])
+                resd["RAT"].append(flt2time[flight][1])
+                resd["Flight_time"].append(flt2time[flight][1]-flt2time[flight][0])
                 resd["Capacity"].append(self.tail2cap[self.tails[i]])
                 resd["Pax"].append(paxDict[flight])
-                resd["Timestring"].append(self.S.getTimeString(timeDict[flight][0])+" -> "+self.S.getTimeString(timeDict[flight][1]))
+                resd["Timestring"].append(self.S.getTimeString(flt2time[flight][0])+" -> "+self.S.getTimeString(flt2time[flight][1]))
                 arrdelay=round(resd["RAT"][-1]-self.S.flight2scheduleAT[flight])
                 resd["Delay"].append(self.S.getTimeString(arrdelay) if arrdelay>0 else '')
                 if flight in self.S.disruptedFlights:
@@ -132,7 +143,7 @@ class VNSSolver:
       
     def evaluate(self,Ps,Qs):
         flt2tail={flt:self.tails[i] for i,P in enumerate(Ps) for flt in P[1:-1]}
-        # estimate the earliest possible dt&at for each flight based on the structure of Ps
+        # greedy assignment of dt&at for each flight based on the structure of Ps
         timeDict={flt:[0,0] for flt in self.flts}
         for P in Ps:
             for i in range(len(P)):
@@ -141,8 +152,9 @@ class VNSSolver:
                 elif i>1 and i<len(P)-1:
                     timeDict[P[i]][0]=max(timeDict[P[i-1]][1]+self.S.config["ACMINCONTIME"],self.node[P[i]].SDT)
                     timeDict[P[i]][1]=timeDict[P[i]][0]+self.node[P[i]].SFT
+        timeDictCopy=timeDict.copy()
         
-        # feasibility check for crews: check conflict/unconnected flights based on current timeDict and Qs
+        # feasibility check for crews: check conflict/unconnected flights based on current flt2time and Qs
         for Q in Qs:
             curArrTime=self.S.config["STARTTIME"]
             for flt in Q[1:-1]:
@@ -150,41 +162,67 @@ class VNSSolver:
                     return np.inf,None,None
                 else:
                     curArrTime=timeDict[flt][1]
-                    
-        # allocate passengers to minimize the actual delay cost. TODO: improve the allocation of passengers when considering two-leg/three-leg flights
+          
+        # allocate passengers to minimize the actual delay cost.
         paxDict={flt:self.S.flt2pax[flt] for flt in self.flts}
         fltDelays=sorted([(flt,timeDict[flt][1]-self.node[flt].ScheduleAT) for flt in self.flts],key=lambda item:item[1],reverse=True)
-        paxDelays=[]; flt2flowin={}
-        for i,(flt1,delay1) in enumerate(fltDelays):
+        paxDelays=[]; flt2flowin=defaultdict(int)
+        for flt1,delay1 in fltDelays:
             if delay1==0:
                 break
-            for j in range(i+1,len(fltDelays)):
-                flt2=fltDelays[j][0]
-                if self.node[flt1].Ori==self.node[flt2].Ori and self.node[flt1].Des==self.node[flt2].Des and self.node[flt1].ScheduleDT<=self.node[flt2].SDT and self.node[flt1].SAT>self.node[flt2].SAT:
+
+            # not reroute
+            minCost=self.S.config["DELAYCOST"]*paxDict[flt1]*(timeDict[flt1][1]-self.node[flt1].ScheduleAT)
+            minflt2=None            
+            for flt2 in self.flts:
+                if flt2tail[flt1]!=flt2tail[flt2] and self.node[flt1].Ori==self.node[flt2].Ori and self.node[flt1].Des==self.node[flt2].Des and timeDict[flt1][1]>timeDict[flt2][1]:
                     remain2=self.tail2cap[flt2tail[flt2]]-paxDict[flt2]
                     leave=min(remain2,paxDict[flt1])
-                    paxDict[flt1]-=leave
-                    paxDict[flt2]+=leave
-                    paxDelays.append((leave,self.node[flt2].SAT-self.node[flt1].ScheduleAT,"%s-%s"%(flt1,flt2)))
-                    flt2flowin[flt2]=leave
-            paxDelays.append((paxDict[flt1]-flt2flowin.get(flt1,0),delay1,flt1))
+                    remain1=paxDict[flt1]-leave
+                    if self.node[flt1].ScheduleDT<=timeDict[flt2][0]:
+                        nflt2SDT,nflt2SAT=timeDict[flt2][0],timeDict[flt2][1]
+                        cost=self.S.config["DELAYCOST"]*leave*(timeDict[flt2][1]-self.node[flt1].ScheduleAT)+self.S.config["DELAYCOST"]*remain1*(timeDict[flt1][1]-self.node[flt1].ScheduleAT)
+                    else:
+                        nflt2SDT,nflt2SAT=self.node[flt1].ScheduleDT,self.node[flt2].SAT-self.node[flt2].SDT+self.node[flt1].ScheduleDT
+                        cost=self.S.config["DELAYCOST"]*leave*(nflt2SAT-self.node[flt1].ScheduleAT)+self.S.config["DELAYCOST"]*remain1*(timeDict[flt1][1]-self.node[flt1].ScheduleAT)+self.S.config["DELAYCOST"]*paxDict[flt2]*(nflt2SAT-self.node[flt2].ScheduleAT)
+                    if cost<minCost:
+                        minCost=cost
+                        minflt2=flt2
+                        minflt2SDT,minflt2SAT=nflt2SDT,nflt2SAT
+
+            if minflt2!=None:
+                timeDict[minflt2]=(minflt2SDT,minflt2SAT)
+                paxDict[flt1]-=leave
+                paxDict[minflt2]+=leave
+                paxDelays.append((leave,timeDict[minflt2][1]-self.node[flt1].ScheduleAT,"%s-%s"%(flt1,minflt2)))
+                flt2flowin[minflt2]+=leave
+                
+            paxDelays.append((paxDict[flt1]-flt2flowin.get(flt1,0)-self.S.flt2nonepax.get(flt1,0),delay1,flt1))
             
+        # the cost related to modification of timeDict
+        for flt in self.flts:
+            delta=timeDict[flt][1]-timeDictCopy[flt][1]
+            if delta!=0:
+                paxDelays.append((paxDict[flt]-flt2flowin[flt],delta,flt))
+    
         # compute the actual delay cost based on paxDelays
         delayCost=0
         for nPax,delay,info in paxDelays:
-            delayCost+=self.S.config["DELAYCOST"]*nPax*delay                
-        return (delayCost,timeDict,paxDict)
+            delayCost+=self.S.config["DELAYCOST"]*nPax*delay
+        return delayCost,timeDict,paxDict
+
+deltas=[]
+for dataset in ["ACF4","ACF5"]:
+    for i in range(1,10):
+        S=Scenario(dataset,dataset+"-SC%d"%i,"PAX")
+        t1=time.time()
+        solver=VNSSolver(S,0)
+        solver.generateVNSRecoveryPlan(*solver.VNS(100))
+        t2=time.time()
+        deltas.append(t2-t1)
+
+df=pd.read_csv("Results/Stats.csv",na_filter=None)
+df["VNS_time"]=deltas
+df.to_csv("Results/Stats.csv",index=None)
 
 
-
-                                  
-S=Scenario("ACF4","ACF4-SC1","PAX")
-solver=VNSSolver(S,0)
-Ps=[['ORD', 'F03', 'F04', 'F02', 'ATL'], ['ORD', 'F07', 'F01', 'F05', 'F06', 'ORD'], ['ORD', 'F00', 'F08', 'F09', 'LAX'], ['LAX', 'F10', 'F11', 'F12', 'ORD']]
-Qs=[['ORD', 'F07', 'F01', 'F05', 'ATL'], ['ORD', 'F02', 'ATL'], ['ORD', 'F03', 'F04', 'F09', 'LAX'], ['ATL', 'F12', 'ORD'], ['ORD', 'F00', 'F08', 'ORD'], ['LAX', 'F10', 'F11', 'ATL'], ['ATL', 'F06', 'ORD']]
-res=solver.evaluate(Ps,Qs)
-print(res)
-
-        
-        
-        
