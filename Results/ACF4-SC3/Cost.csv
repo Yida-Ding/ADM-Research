@@ -1,6 +1,6 @@
 Cost,Value,Pct
 extra_fuel_cost,0,0%
-delay_cost,2106,102%
+delay_cost,2580,102%
 cancel_cost,0,0%
-follow_gain,-50,-2%
-objective,2055,\
+follow_gain,-40,-2%
+objective,2540,\
