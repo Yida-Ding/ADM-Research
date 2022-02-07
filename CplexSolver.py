@@ -5,13 +5,9 @@ from Scenarios.ScenarioGenerator import ScenarioGenerator
 from ModelExecutor import mainModelExecutor
 from ResultAnalyzer import mainResultAnalyzer
 
-def delete(dataset,scenario):
-    shutil.rmtree("Scenarios/"+scenario)
-    shutil.rmtree("Results/"+scenario)
-    
 def main(dataset,scenario,seed=0):
     SC=ScenarioGenerator(dataset,scenario,seed)
-    delayinfo=SC.getRandomFlightDelay(3)
+    delayinfo=SC.getRandomFlightDelay(2)
     SC.setFlightDepartureDelay(delayinfo)
     SC.setDelayedReadyTime({})
     try:
@@ -23,20 +19,21 @@ def main(dataset,scenario,seed=0):
         return False
     return True
 
+def mainWithoutExcept(dataset,scenario,seed=0):
+    SC=ScenarioGenerator(dataset,scenario,seed)
+    delayinfo=SC.getRandomFlightDelay(2)
+    SC.setFlightDepartureDelay(delayinfo)
+    SC.setDelayedReadyTime({})
+    mainModelExecutor(dataset,scenario)
+    mainResultAnalyzer(dataset,scenario)
+
 def runCPLEX(dataset,scenario):
-    t1=time.time()
-    try:
-        mainModelExecutor(dataset,scenario)
-        mainResultAnalyzer(dataset,scenario)
-    except: # cplex no solution error
-        shutil.rmtree("Scenarios/"+scenario)
-        shutil.rmtree("Results/"+scenario)
-    t2=time.time()
-    return t2-t1
+    mainModelExecutor(dataset,scenario)
+    mainResultAnalyzer(dataset,scenario)
 
 def runMain(dataset):
     seed=0
-    for i in range(1,10):
+    for i in range(10):
         while True:
             flag=main(dataset,dataset+"-SC%d"%i,seed)
             if flag:
@@ -45,19 +42,6 @@ def runMain(dataset):
             else:
                 seed+=1
 
-deltas=[]
-for dataset in ["ACF4","ACF5"]:
-    for i in range(1,10):
-        delta=runCPLEX(dataset,dataset+"-SC%d"%i)
-        deltas.append(delta)
+runMain("ACF6")
+#main("ACF5","ACF5-SC9")
 
-df=pd.read_csv("Results/Stats.csv",na_filter=None)
-df["CPLEX_time"]=deltas
-df.to_csv("Results/Stats.csv",index=None)
-
-
-
-
-
-
-  

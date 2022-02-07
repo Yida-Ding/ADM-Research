@@ -22,17 +22,10 @@ class VNSSolver:
         self.skdPs=[[self.tail2srcdest[tail][0]]+flts+[self.tail2srcdest[tail][1]] for tail,flts in S.tail2flights.items()]   # e.g. P=[LAX,F00,F01,F02,ORD]; Ps=[P1,P2,P3,..]
         self.skdQs=[[self.crew2srcdest[crew][0]]+flts+[self.crew2srcdest[crew][1]] for crew,flts in S.crew2flights.items()]
         self.k2func={1:"swap",2:"cross",3:"insert"}
-        
-        # process dfitinerary
-        self.itins=self.S.dfitinerary["Itinerary"].tolist()
-        self.itin2skdflts,self.itin2od,self.itin2skdtime,self.itin2skdpax,self.flt2skditins={},{},{},{},defaultdict(list)
-        for row in self.S.dfitinerary.itertuples():
-            self.itin2skdflts[row.Itinerary]=row.Flight_legs.split('-')
-            self.itin2od[row.Itinerary]=(row.From,row.To)
-            self.itin2skdtime[row.Itinerary]=(row.SDT,row.SAT)
-            self.itin2skdpax[row.Itinerary]=row.Pax
-            for flt in row.Flight_legs.split('-'):
-                self.flt2skditins[flt].append(row.Itinerary)
+            
+    def visTimes(self,timeDict):
+        for flt,times in timeDict.items():
+            print(flt,self.S.getTimeString(times[0]),self.S.getTimeString(times[1]))
             
     def checkConnections(self,pairs): #pairs=[(P1,P2)] or [(Q1,Q2)]
         flag=True
@@ -102,47 +95,27 @@ class VNSSolver:
                 else:
                     k+=1
         
-        print("The minimum delay cost:",minRes[0])
+        print("The minimum cost:",minRes[0])
         print("Tail assignment:",minPs)
         print("Crew assignment:",minQs)
         return minPs,minQs,minRes
     
-    def generateVNSRecoveryPlan(self,minPs,minQs,minRes):
-        resd=defaultdict(list)
-        obj,flt2time,paxDict=minRes
-        flt2crew={flt:self.crews[i] for i,Q in enumerate(minQs) for flt in Q[1:-1]}
-        for i,P in enumerate(minPs):
-            for flight in P[1:-1]:
-                resd["Tail"].append(self.tails[i])
-                resd["Flight"].append(flight)
-                resd["Crew"].append(flt2crew[flight])
-                resd["From"].append(self.node[flight].Ori)
-                resd["To"].append(self.node[flight].Des)
-                resd["RDT"].append(flt2time[flight][0])
-                resd["RAT"].append(flt2time[flight][1])
-                resd["Flight_time"].append(flt2time[flight][1]-flt2time[flight][0])
-                resd["Capacity"].append(self.tail2cap[self.tails[i]])
-                resd["Pax"].append(paxDict[flight])
-                resd["Timestring"].append(self.S.getTimeString(flt2time[flight][0])+" -> "+self.S.getTimeString(flt2time[flight][1]))
-                arrdelay=round(resd["RAT"][-1]-self.S.flight2scheduleAT[flight])
-                resd["Delay"].append(self.S.getTimeString(arrdelay) if arrdelay>0 else '')
-                if flight in self.S.disruptedFlights:
-                    resd["DelayType"].append(1)
-                elif arrdelay>0:
-                    resd["DelayType"].append(2)
-                else:
-                    resd["DelayType"].append(0)
         
-        dfrecovery=pd.DataFrame(resd)
-        dfrecovery.to_csv("Results/"+self.S.scname+"/RecoveryVNS.csv",index=None)
-        resdcost=defaultdict(list)
-        resdcost["Cost"].append("delay_cost")
-        resdcost["Value"].append(round(obj))
-        dfcost=pd.DataFrame(resdcost)
-        dfcost.to_csv("Results/"+self.S.scname+"/CostVNS.csv",index=None)
-      
     def evaluate(self,Ps,Qs):
         flt2tail={flt:self.tails[i] for i,P in enumerate(Ps) for flt in P[1:-1]}
+        # find the father flight for each flight based on Qs and multiple hop schedule itin
+        flt2father={}
+        for Q in Qs:
+            flts=Q[1:-1]
+            flt2father[flts[0]]=None
+            for i in range(1,len(flts)):
+                flt2father[flts[i]]=flts[i-1]
+        for fltleg in self.S.fltlegs2itin.keys():
+            flts=fltleg.split('-')
+            if len(flts)>1:
+                for i in range(1,len(flts)):
+                    flt2father[flts[i]]=flts[i-1]
+                            
         # greedy assignment of dt&at for each flight based on the structure of Ps
         timeDict={flt:[0,0] for flt in self.flts}
         for P in Ps:
@@ -152,77 +125,168 @@ class VNSSolver:
                 elif i>1 and i<len(P)-1:
                     timeDict[P[i]][0]=max(timeDict[P[i-1]][1]+self.S.config["ACMINCONTIME"],self.node[P[i]].SDT)
                     timeDict[P[i]][1]=timeDict[P[i]][0]+self.node[P[i]].SFT
-        timeDictCopy=timeDict.copy()
         
-        # feasibility check for crews: check conflict/unconnected flights based on current flt2time and Qs
+        # repair timeDict based on the structure of Qs
+        for flt,father in flt2father.items():
+            if father!=None:
+                fatherAt=timeDict[father][1]
+                timeDict[flt][0]=max(timeDict[flt][0],fatherAt+self.S.config["CREWMINCONTIME"])
+                timeDict[flt][1]=timeDict[flt][0]+self.node[flt].SFT
+                
+        # feasibility check for crews: check conflict/unconnected flights based on current timeDict and Qs
         for Q in Qs:
             curArrTime=self.S.config["STARTTIME"]
             for flt in Q[1:-1]:
                 if curArrTime+self.node[flt].CT>timeDict[flt][0]:
-                    return np.inf,None,None
+                    return np.inf,None,None,None
                 else:
                     curArrTime=timeDict[flt][1]
-          
-        # allocate passengers to minimize the actual delay cost.
-        paxDict={flt:self.S.flt2pax[flt] for flt in self.flts}
-        fltDelays=sorted([(flt,timeDict[flt][1]-self.node[flt].ScheduleAT) for flt in self.flts],key=lambda item:item[1],reverse=True)
-        paxDelays=[]; flt2flowin=defaultdict(int)
-        for flt1,delay1 in fltDelays:
-            if delay1==0:
-                break
-
-            # not reroute
-            minCost=self.S.config["DELAYCOST"]*paxDict[flt1]*(timeDict[flt1][1]-self.node[flt1].ScheduleAT)
+        
+        itinDelay=sorted([(itin,timeDict[self.S.itin2flights[itin][-1]][1]-self.S.itin2skdtime[itin][1]) for itin in self.S.itin2flights.keys()],key=lambda xx:xx[1],reverse=True)
+        itin2pax=self.S.itin2pax.copy()
+        bothItin2pax=defaultdict(int); itin2flowin=defaultdict(int)
+        for itin1,delay1 in itinDelay:
+            # Case1: not rerouted
+            minCost=self.S.config["DELAYCOST"]*itin2pax[itin1]*delay1
             minflt2=None            
+            
+            flts1=self.S.itin2flights[itin1]
             for flt2 in self.flts:
-                if flt2tail[flt1]!=flt2tail[flt2] and self.node[flt1].Ori==self.node[flt2].Ori and self.node[flt1].Des==self.node[flt2].Des and timeDict[flt1][1]>timeDict[flt2][1]:
-                    remain2=self.tail2cap[flt2tail[flt2]]-paxDict[flt2]
-                    leave=min(remain2,paxDict[flt1])
-                    remain1=paxDict[flt1]-leave
-                    if self.node[flt1].ScheduleDT<=timeDict[flt2][0]:
-                        nflt2SDT,nflt2SAT=timeDict[flt2][0],timeDict[flt2][1]
-                        cost=self.S.config["DELAYCOST"]*leave*(timeDict[flt2][1]-self.node[flt1].ScheduleAT)+self.S.config["DELAYCOST"]*remain1*(timeDict[flt1][1]-self.node[flt1].ScheduleAT)
-                    else:
-                        nflt2SDT,nflt2SAT=self.node[flt1].ScheduleDT,self.node[flt2].SAT-self.node[flt2].SDT+self.node[flt1].ScheduleDT
-                        cost=self.S.config["DELAYCOST"]*leave*(nflt2SAT-self.node[flt1].ScheduleAT)+self.S.config["DELAYCOST"]*remain1*(timeDict[flt1][1]-self.node[flt1].ScheduleAT)+self.S.config["DELAYCOST"]*paxDict[flt2]*(nflt2SAT-self.node[flt2].ScheduleAT)
+                if self.S.itin2origin[itin1]==self.node[flt2].Ori and self.S.itin2destination[itin1]==self.node[flt2].Des and timeDict[flt2][1]<timeDict[flts1[-1]][1]:# arrive earlier than current
+                    paxFlt2=sum([itin2pax[itin] for itin in self.S.flt2skditins[flt2]])
+                    remain2=self.tail2cap[flt2tail[flt2]]-paxFlt2
+                    leave=min(remain2,itin2pax[itin1])
+                    remain1=itin2pax[itin1]-leave                    
+                    # Case2: reroute with a late flight
+                    if timeDict[flt2][0]>self.S.itin2skdtime[itin1][0]: # depart later than schedule, then arrive must later than schedule 
+                        timeFlt2=[timeDict[flt2][0],timeDict[flt2][1]]
+                        cost=self.S.config["DELAYCOST"]*leave*(timeDict[flt2][1]-self.S.itin2skdtime[itin1][1])+self.S.config["DELAYCOST"]*remain1*delay1                    
+                    # Case3: reroute with an early flight
+                    else: # depart earlier than schedule, change the time of flight2 to schedule
+                        timeFlt2=[self.S.itin2skdtime[itin1][0],self.S.itin2skdtime[itin1][0]+self.node[flt2].SFT]
+                        cost=self.S.config["DELAYCOST"]*remain1*delay1+self.S.config["DELAYCOST"]*paxFlt2*(timeFlt2[1]-self.node[flt2].ScheduleAT)                        
                     if cost<minCost:
                         minCost=cost
                         minflt2=flt2
-                        minflt2SDT,minflt2SAT=nflt2SDT,nflt2SAT
-
+                        minTimeFlt2=timeFlt2
+                        minLeave=leave
+                            
             if minflt2!=None:
-                timeDict[minflt2]=(minflt2SDT,minflt2SAT)
-                paxDict[flt1]-=leave
-                paxDict[minflt2]+=leave
-                paxDelays.append((leave,timeDict[minflt2][1]-self.node[flt1].ScheduleAT,"%s-%s"%(flt1,minflt2)))
-                flt2flowin[minflt2]+=leave
-                
-            paxDelays.append((paxDict[flt1]-flt2flowin.get(flt1,0)-self.S.flt2nonepax.get(flt1,0),delay1,flt1))
+                itin2=self.S.fltlegs2itin[minflt2]
+                timeDict[minflt2]=minTimeFlt2
+                itin2flowin[itin2]+=minLeave
+                itin2pax[itin1]-=minLeave
+                itin2pax[itin2]+=minLeave
+                bothItin2pax[(itin2,itin1)]=minLeave
             
-        # the cost related to modification of timeDict
-        for flt in self.flts:
-            delta=timeDict[flt][1]-timeDictCopy[flt][1]
-            if delta!=0:
-                paxDelays.append((paxDict[flt]-flt2flowin[flt],delta,flt))
-    
-        # compute the actual delay cost based on paxDelays
+            # feasibility check for itin1: check conflict or unconnected flights 
+            if itin2pax[itin1]>0:
+                curAt=self.S.config["STARTTIME"]
+                for flt in flts1:
+                    if curAt+self.node[flt].CT>timeDict[flt][0]:
+                        return np.inf,None,None,None
+                    else:
+                        curAt=timeDict[flt][1]
+                
+            bothItin2pax[(itin1,itin1)]=itin2pax[itin1]-itin2flowin.get(itin1,0)
+        
+        # compute paxDict
+        paxDict=defaultdict(int)
+        for recItin,pax in itin2pax.items():
+            for flt in self.S.itin2flights[recItin]:
+                paxDict[flt]+=pax                    
+        
+        # compute delay cost
         delayCost=0
-        for nPax,delay,info in paxDelays:
-            delayCost+=self.S.config["DELAYCOST"]*nPax*delay
-        return delayCost,timeDict,paxDict
+        for bothItin,pax in bothItin2pax.items():
+            recItin,skdItin=bothItin
+            delay=timeDict[self.S.itin2flights[recItin][-1]][1]-self.S.itin2skdtime[skdItin][1]
+            if delay<0:
+                delay=0
+            delayCost+=self.S.config["DELAYCOST"]*delay*pax
+        
+        # compute follow gain
+        followCost=0
+        for i,skdFlts in enumerate(self.S.tail2flights.values()):
+            recFlts=Ps[i][1:-1]
+            followCost+=self.S.config["FOLLOWSCHEDULECOST"]
+            for j in range(len(skdFlts)):
+                if j<len(recFlts) and skdFlts[j]==recFlts[j]:
+                    followCost+=self.S.config["FOLLOWSCHEDULECOST"]
+        for i,skdFlts in enumerate(self.S.crew2flights.values()):
+            recFlts=Qs[i][1:-1]
+            followCost+=self.S.config["FOLLOWSCHEDULECOST"]
+            for j in range(len(skdFlts)):
+                if j<len(recFlts) and skdFlts[j]==recFlts[j]:
+                    followCost+=self.S.config["FOLLOWSCHEDULECOST"]
+        for bothItin,pax in bothItin2pax.items():
+            recItin,skdItin=bothItin
+            if recItin==skdItin:
+                followCost+=self.S.config["FOLLOWSCHEDULECOSTPAX"]*pax*(len(self.S.itin2flights[skdItin])+1)            
+        
+        objective=delayCost+followCost
+        return objective,timeDict,bothItin2pax,paxDict,delayCost,followCost
+            
 
-deltas=[]
-for dataset in ["ACF4","ACF5"]:
-    for i in range(1,10):
-        S=Scenario(dataset,dataset+"-SC%d"%i,"PAX")
-        t1=time.time()
-        solver=VNSSolver(S,0)
-        solver.generateVNSRecoveryPlan(*solver.VNS(100))
-        t2=time.time()
-        deltas.append(t2-t1)
+    def generateVNSRecoveryPlan(self,minPs,minQs,minRes):
+        objective,timeDict,bothItin2pax,paxDict,delayCost,followCost=minRes
+        flt2crew={flt:self.crews[i] for i,Q in enumerate(minQs) for flt in Q[1:-1]}
+        
+        resd=defaultdict(list)
+        for i,P in enumerate(minPs):
+            for flight in P[1:-1]:
+                resd["Tail"].append(self.tails[i])
+                resd["Flight"].append(flight)
+                resd["Crew"].append(flt2crew[flight])
+                resd["From"].append(self.node[flight].Ori)
+                resd["To"].append(self.node[flight].Des)
+                resd["RDT"].append(timeDict[flight][0])
+                resd["RAT"].append(timeDict[flight][1])
+                resd["Flight_time"].append(timeDict[flight][1]-timeDict[flight][0])
+                resd["Capacity"].append(self.tail2cap[self.tails[i]])
+                resd["Pax"].append(paxDict[flight])
+                resd["Timestring"].append(self.S.getTimeString(timeDict[flight][0])+" -> "+self.S.getTimeString(timeDict[flight][1]))
+                arrdelay=round(resd["RAT"][-1]-self.S.flight2scheduleAT[flight])
+                resd["Delay"].append(self.S.getTimeString(arrdelay) if arrdelay>0 else '')
+                if flight in self.S.disruptedFlights:
+                    resd["DelayType"].append(1)
+                elif arrdelay>0:
+                    resd["DelayType"].append(2)
+                else:
+                    resd["DelayType"].append(0)
+                    
+        resdItin=defaultdict(list)
+        for bothItin,pax in bothItin2pax.items():
+            recItin,skdItin=bothItin
+            recFlts=self.S.itin2flights[recItin]
+            resdItin["Rec_itin"].append(recItin)
+            resdItin["Skd_itin"].append(skdItin)
+            resdItin["Rec_flights"].append('-'.join(recFlts))
+            resdItin["Skd_flights"].append('-'.join(self.S.itin2flights[skdItin]))
+            resdItin["Pax"].append(pax)
+            resdItin["From"].append(self.S.itin2origin[skdItin])
+            resdItin["To"].append(self.S.itin2destination[skdItin])
+            resdItin["RDT"].append(timeDict[recFlts[0]][0])
+            resdItin["RAT"].append(timeDict[recFlts[-1]][1])
+            delay=timeDict[recFlts[-1]][1]-self.S.itin2skdtime[skdItin][1]
+            if delay<0:
+                delay=0
+            resdItin["Arr_delay"].append(delay)
+            resdItin["Cost"].append("%.1f"%(self.S.config["DELAYCOST"]*pax*delay))
+            resdItin["Rec_string"].append(self.S.getTimeString(timeDict[recFlts[0]][0])+' -> '+self.S.getTimeString(timeDict[recFlts[-1]][1]))
+                    
+        dfrecovery=pd.DataFrame(resd)
+        dfrecovery.to_csv("Results/"+self.S.scname+"/RecoveryVNS.csv",index=None)
+        dfitin=pd.DataFrame(resdItin).sort_values(by=["Rec_itin","Skd_itin"])
+        dfitin.to_csv("Results/"+self.S.scname+"/ItineraryVNS.csv",index=None)
+        costDict={"DelayCost":delayCost,"ExtraFuelCost":0.,"CancelCost":0.,"FollowGain":followCost,"Objective":objective}
+        with open("Results/%s/CostVNS.json"%(self.S.scname), "w") as outfile:
+            json.dump(costDict, outfile, indent = 4)
 
-df=pd.read_csv("Results/Stats.csv",na_filter=None)
-df["VNS_time"]=deltas
-df.to_csv("Results/Stats.csv",index=None)
+      
+for i in range(10):
+    S=Scenario("ACF6","ACF6-SC%d"%i,"PAX")
+    solver=VNSSolver(S,0)
+    solver.generateVNSRecoveryPlan(*solver.VNS(100))
 
 

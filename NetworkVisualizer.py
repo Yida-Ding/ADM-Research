@@ -39,15 +39,12 @@ class Visualizer:
         return dfschedule,flightlists,flight2info,"Schedule"
             
     def getRecoveryData(self,title="CPLEX"):
-        if title=="CPLEX":
-            dfrecovery=pd.read_csv("Results/"+self.scenario+'/Recovery.csv',na_filter=None)
-            dfcost=pd.read_csv("Results/"+self.scenario+'/Cost.csv',na_filter=None)
-            cost=dfcost["Value"].tolist()[1]
-        elif title=="VNS":
-            dfrecovery=pd.read_csv("Results/"+self.scenario+'/RecoveryVNS.csv',na_filter=None)
-            dfcost=pd.read_csv("Results/"+self.scenario+'/CostVNS.csv',na_filter=None)
-            cost=dfcost["Value"].tolist()[0]
-        title=title+"(delay_cost="+str(cost)+")"
+        dfrecovery=pd.read_csv("Results/"+self.scenario+'/Recovery%s.csv'%title,na_filter=None)
+        with open("Results/"+self.scenario+"/Cost%s.json"%title, "r") as outfile:
+            costDict=json.load(outfile)
+            cost=costDict["Objective"]
+                
+        title=title+"(obj=%d)"%cost
         flightlists=[dfcur["Flight"].tolist() for tail,dfcur in dfrecovery.groupby("Tail")]
         flight2info=defaultdict(list)
         for row in dfrecovery.itertuples():
@@ -65,7 +62,7 @@ class Visualizer:
         xmax=max([len(fltlst) for fltlst in flightlists])
         ymax=len(flightlists)
         if ax==None:
-            fig,ax=plt.subplots(1,1,figsize=(ymax*5,xmax*3))
+            fig,ax=plt.subplots(1,1,figsize=(xmax*5,ymax*3))
         
         locs=[(fltlst.index(flt),-flightlists.index(fltlst)) for fltlst in flightlists for flt in fltlst]   
         crew2color={crew:plt.get_cmap("gist_rainbow")(i/len(set(df["Crew"]))) for i,crew in enumerate(set(df["Crew"]))}
@@ -103,8 +100,12 @@ class Visualizer:
         plt.savefig("Results/%s/%s.png"%(V.scenario,title))
         plt.close()
 
-for i in range(1,10):
+for i in range(10):
     V=Visualizer("ACF5","ACF5-SC%d"%i)
     V.plotFlightNetwork(*V.getScheduleData())
     V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
     V.plotFlightNetwork(*V.getRecoveryData("VNS"))
+
+#
+#V=Visualizer("ACF6","ACF6-SC1")
+#V.plotFlightNetwork(*V.getScheduleData())

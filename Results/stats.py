@@ -5,10 +5,12 @@ from collections import defaultdict
 resd=defaultdict(list)
 for dire in os.listdir():
     if os.path.isdir(dire):
-        dfcostCPLEX=pd.read_csv(dire+'/Cost.csv',na_filter=None)
-        dfcostVNS=pd.read_csv(dire+'/CostVNS.csv',na_filter=None)
-        costCPLEX=dfcostCPLEX["Value"].tolist()[1]
-        costVNS=dfcostVNS["Value"].tolist()[0]
+        with open(dire+"/CostCPLEX.json", "r") as outfile:
+            costDict=json.load(outfile)
+            costCPLEX=costDict["Objective"]
+        with open(dire+"/CostVNS.json", "r") as outfile:
+            costDict=json.load(outfile)
+            costVNS=costDict["Objective"]
         resd["Scenario"].append(dire)
         resd["CPLEX"].append(costCPLEX)
         resd["VNS"].append(costVNS)

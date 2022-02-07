@@ -42,7 +42,7 @@ class Scenario:
         self.tail2flights={tail:df_cur["Flight"].tolist() for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
         self.crew2flights={crew:df_cur["Flight"].tolist() for crew,df_cur in self.dfdrpschedule.groupby("Crew")}
         
-        self.itin2flights,self.itin2pax,self.flt2pax,self.flt2nonepax,self.flight2itinNum={},{},defaultdict(int),defaultdict(int),defaultdict(list)
+        self.itin2flights,self.itin2pax,self.flt2pax,self.flight2itinNum,self.flt2skditins={},{},defaultdict(int),defaultdict(list),defaultdict(list)
         for row in self.dfitinerary.itertuples():
             flights=row.Flight_legs.split('-')
             self.itin2flights[row.Itinerary]=flights
@@ -50,18 +50,17 @@ class Scenario:
             for flight in flights:
                 self.flight2itinNum[flight].append((row.Itinerary,row.Pax))
                 self.flt2pax[flight]+=row.Pax
-                if len(flights)>1 and flight!=flights[-1]:
-                    self.flt2nonepax[flight]+=row.Pax
+                self.flt2skditins[flight].append(row.Itinerary)
                     
         if paxtype=="PAX":
-            self.paxname2flights,self.paxname2itin,self.flight2paxnames={},{},defaultdict(list)
+            self.paxname2flights={}
             for row in self.dfpassenger.itertuples():
                 flights=row.Flights.split('-')
                 self.paxname2flights[row.Pax]=flights
-                self.paxname2itin[row.Pax]=row.Itinerary
-                for flight in flights:
-                    self.flight2paxnames[flight].append(row.Pax)        
         
+        self.fltlegs2itin={row.Flight_legs:row.Itinerary for row in self.dfitinerary.itertuples()}
+        self.itin2skdtime={row.Itinerary:(row.SDT,row.SAT) for row in self.dfitinerary.itertuples()}
+        self.itin2origin={itin:self.name2FNode[self.itin2flights[itin][0]].Ori for itin in self.itin2flights.keys()}
         self.itin2destination={itin:self.name2FNode[self.itin2flights[itin][-1]].Des for itin in self.itin2flights.keys()}
         self.tail2capacity={tail:df_cur["Capacity"].tolist()[0] for tail,df_cur in self.dfdrpschedule.groupby("Tail")}
         self.type2flightdict={"ACF":self.tail2flights,"CRW":self.crew2flights,paxtype:self.itin2flights if paxtype=="ITIN" else self.paxname2flights}

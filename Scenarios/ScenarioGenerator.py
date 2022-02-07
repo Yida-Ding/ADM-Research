@@ -50,7 +50,7 @@ class ScenarioGenerator:
     
     def getRandomFlightDelay(self,k):
         selflights=random.sample(self.D.flights,k)
-        flight2hour={flight:random.randint(1,4) for flight in selflights}
+        flight2hour={flight:random.randint(1,3) for flight in selflights}
         return {flight:hour*3600 for flight,hour in flight2hour.items()}
 
         
