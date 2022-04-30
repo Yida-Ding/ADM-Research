@@ -10,6 +10,6 @@
         "PAX": 0
     },
     "SIZEBOUND": 1000,
-    "MIPTOLERANCE": 0,
-    "TIMELIMIT": 0
+    "MIPTOLERANCE": 0.01,
+    "TIMELIMIT": 300
 }

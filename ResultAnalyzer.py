@@ -194,7 +194,6 @@ def mainResultAnalyzer(dataset,scenario,mode="Mode1"):
     analyzer.getReroutingActions()
     analyzer.getCostTerms()
     
-mainResultAnalyzer("ACF4","ACF4-SC1","Mode1")
 
 
 

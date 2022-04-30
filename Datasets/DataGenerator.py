@@ -181,8 +181,8 @@ def generateDataset(direname,config):
         json.dump(config, outfile, indent = 4)
 
     
-config={"MAXAC":6, # Number of aicraft trajectories to generate
-        "MAXACT":2, # Number of unique aircraft types
+config={"MAXAC":7, # Number of aicraft trajectories to generate
+        "MAXACT":3, # Number of unique aircraft types
         "MAXAPT":5, # Number of airports
         "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
         "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
@@ -207,7 +207,7 @@ config={"MAXAC":6, # Number of aicraft trajectories to generate
         "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
         "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
         "PAXSCALE":20, # For simplicity, scale down the number of passengers
-        "SEED":1 # Random seed
+        "SEED":3 # Random seed
         }
 
 generateDataset("ACF%d"%config["MAXAC"],config)

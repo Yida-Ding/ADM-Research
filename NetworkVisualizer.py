@@ -100,12 +100,9 @@ class Visualizer:
         plt.savefig("Results/%s/%s.png"%(V.scenario,title))
         plt.close()
 
-for i in range(10):
-    V=Visualizer("ACF5","ACF5-SC%d"%i)
-    V.plotFlightNetwork(*V.getScheduleData())
-    V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
-    V.plotFlightNetwork(*V.getRecoveryData("VNS"))
+V=Visualizer("ACF7","ACF7-SC1")
+V.plotFlightNetwork(*V.getScheduleData())
+V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
+V.plotFlightNetwork(*V.getRecoveryData("VNS"))
 
-#
-#V=Visualizer("ACF6","ACF6-SC1")
-#V.plotFlightNetwork(*V.getScheduleData())
+

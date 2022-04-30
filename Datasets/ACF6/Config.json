@@ -1,6 +1,6 @@
 {
     "MAXAC": 6,
-    "MAXACT": 2,
+    "MAXACT": 3,
     "MAXAPT": 5,
     "LOADFACTOR": 0.8,
     "MINFLIGHTDISTANCE": 600,
@@ -30,5 +30,5 @@
     "FOLLOWSCHEDULECOST": -1,
     "FOLLOWSCHEDULECOSTPAX": -0.1,
     "PAXSCALE": 20,
-    "SEED": 1
+    "SEED": 3
 }

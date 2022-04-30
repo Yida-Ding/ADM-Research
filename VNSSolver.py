@@ -1,17 +1,20 @@
 import random
+import io
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
 import numpy as np
 import copy
+import json
+import networkx as nx
 from NetworkGenerator import Scenario
 
-
 class VNSSolver:
-    def __init__(self,S,seed):
+    def __init__(self,S,seed,baseline="uniform",enumFlag=False):
         self.S=S
         random.seed(seed)
+        np.random.seed(seed)
         self.node=S.name2FNode
         self.flts=list(S.flight2dict.keys())
         self.tails=list(S.tail2flights.keys())
@@ -21,12 +24,26 @@ class VNSSolver:
         self.crew2srcdest={crew:[self.node[flts[0]].Ori,self.node[flts[-1]].Des] for crew,flts in S.crew2flights.items()}        
         self.skdPs=[[self.tail2srcdest[tail][0]]+flts+[self.tail2srcdest[tail][1]] for tail,flts in S.tail2flights.items()]   # e.g. P=[LAX,F00,F01,F02,ORD]; Ps=[P1,P2,P3,..]
         self.skdQs=[[self.crew2srcdest[crew][0]]+flts+[self.crew2srcdest[crew][1]] for crew,flts in S.crew2flights.items()]
-        self.k2func={1:"swap",2:"cross",3:"insert"}
-            
-    def visTimes(self,timeDict):
-        for flt,times in timeDict.items():
-            print(flt,self.S.getTimeString(times[0]),self.S.getTimeString(times[1]))
-            
+        self.k2func={0:"pass_",1:"swap",2:"cut",3:"insert"}
+        self.baseline=baseline
+        self.enumFlag=enumFlag
+        
+        # three types of baseline VNS
+        undirectGraph=self.S.connectableGraph.to_undirected()
+        if baseline=="uniform": # uniform probability to be operated
+            self.node2weight={self.S.FNode2name[node]:1 for node in self.S.FNodes}
+        elif baseline=="degree": # larger degree indicates higher probability to be operated
+            self.node2weight={self.S.FNode2name[node]:1/deg for node,deg in undirectGraph.degree()}
+        elif baseline=="distance":  # smaller distance indicates higher probability to be operated
+            self.node2weight={}
+            for drpNode in self.S.drpFNodes:
+                node2distance=nx.single_source_dijkstra_path_length(undirectGraph,drpNode,cutoff=None,weight='weight')
+                for node,dis in node2distance.items():
+                    if self.S.FNode2name[node] not in self.node2weight:
+                        self.node2weight[self.S.FNode2name[node]]=-1*dis
+                    elif self.node2weight[self.S.FNode2name[node]]<-1*dis:
+                        self.node2weight[self.S.FNode2name[node]]=-1*dis
+                        
     def checkConnections(self,pairs): #pairs=[(P1,P2)] or [(Q1,Q2)]
         flag=True
         for pair in pairs:
@@ -39,6 +56,9 @@ class VNSSolver:
             elif pair[0] in self.flts and pair[1] in self.flts and (self.node[pair[0]].Des!=self.node[pair[1]].Ori or self.node[pair[1]].LDT<self.node[pair[0]].CT+self.node[pair[0]].EAT):
                 flag=False
         return flag
+        
+    def pass_(self,X1,X2):
+        return [(X1,X2)]
     
     def swap(self,X1,X2):
         pairs=[]
@@ -48,7 +68,7 @@ class VNSSolver:
                     pairs.append((X1[:u]+[X2[v]]+X1[u+1:],X2[:v]+[X1[u]]+X2[v+1:]))
         return pairs
     
-    def cross(self,X1,X2):
+    def cut(self,X1,X2):
         pairs=[]
         for u1 in range(1,len(X1)-1):
             for u2 in range(u1,len(X1)-1):
@@ -67,40 +87,7 @@ class VNSSolver:
                         pairs.append((X1[:u]+X2[v1:v2+1]+X1[u:],X2[:v1]+X2[v2+1:]))
         return pairs
 
-    def exploreNeighborK(self,k,curPs,curQs):
-        curRes=self.evaluate(curPs,curQs)
-        Pind1,Pind2=random.sample(range(len(curPs)),2)
-        for (nP1,nP2) in eval("self."+self.k2func[k])(curPs[Pind1],curPs[Pind2]):
-            nPs=curPs.copy()
-            nPs[Pind1],nPs[Pind2]=nP1,nP2
-            for i in range(len(curQs)):
-                Qind1,Qind2=random.sample(range(len(curQs)),2)        
-                for (nQ1,nQ2) in eval("self."+self.k2func[k])(curQs[Qind1],curQs[Qind2]):
-                    nQs=curQs.copy()
-                    nQs[Qind1],nQs[Qind2]=nQ1,nQ2
-                    nRes=self.evaluate(nPs,nQs)
-                    if nRes[0]<curRes[0]:
-                        curPs,curQs,curRes=nPs,nQs,nRes
-        return curPs,curQs,curRes
 
-    def VNS(self,numIt=10):
-        minPs,minQs=self.skdPs,self.skdQs
-        minRes=self.evaluate(minPs,minQs)
-        for i in range(numIt):
-            k=1
-            while k<=3:
-                curPs,curQs,curRes=self.exploreNeighborK(k,minPs,minQs)
-                if curRes[0]<minRes[0]:
-                    minPs,minQs,minRes=curPs,curQs,curRes
-                else:
-                    k+=1
-        
-        print("The minimum cost:",minRes[0])
-        print("Tail assignment:",minPs)
-        print("Crew assignment:",minQs)
-        return minPs,minQs,minRes
-    
-        
     def evaluate(self,Ps,Qs):
         flt2tail={flt:self.tails[i] for i,P in enumerate(Ps) for flt in P[1:-1]}
         # find the father flight for each flight based on Qs and multiple hop schedule itin
@@ -142,7 +129,8 @@ class VNSSolver:
                 else:
                     curArrTime=timeDict[flt][1]
         
-        itinDelay=sorted([(itin,timeDict[self.S.itin2flights[itin][-1]][1]-self.S.itin2skdtime[itin][1]) for itin in self.S.itin2flights.keys()],key=lambda xx:xx[1],reverse=True)
+        itinDelay=[(itin,timeDict[self.S.itin2flights[itin][-1]][1]-self.S.itin2skdtime[itin][1]) for itin in self.S.itin2flights.keys()]
+        itinDelay=sorted(itinDelay,key=lambda xx:xx[1],reverse=True)
         itin2pax=self.S.itin2pax.copy()
         bothItin2pax=defaultdict(int); itin2flowin=defaultdict(int)
         for itin1,delay1 in itinDelay:
@@ -194,7 +182,12 @@ class VNSSolver:
         paxDict=defaultdict(int)
         for recItin,pax in itin2pax.items():
             for flt in self.S.itin2flights[recItin]:
-                paxDict[flt]+=pax                    
+                paxDict[flt]+=pax         
+                
+        # feasibility check for tail capacity
+        for flt,tail in flt2tail.items():
+            if paxDict[flt]>self.tail2cap[tail]:
+                return np.inf,None,None,None
         
         # compute delay cost
         delayCost=0
@@ -226,8 +219,7 @@ class VNSSolver:
         
         objective=delayCost+followCost
         return objective,timeDict,bothItin2pax,paxDict,delayCost,followCost
-            
-
+    
     def generateVNSRecoveryPlan(self,minPs,minQs,minRes):
         objective,timeDict,bothItin2pax,paxDict,delayCost,followCost=minRes
         flt2crew={flt:self.crews[i] for i,Q in enumerate(minQs) for flt in Q[1:-1]}
@@ -282,11 +274,87 @@ class VNSSolver:
         costDict={"DelayCost":delayCost,"ExtraFuelCost":0.,"CancelCost":0.,"FollowGain":followCost,"Objective":objective}
         with open("Results/%s/CostVNS.json"%(self.S.scname), "w") as outfile:
             json.dump(costDict, outfile, indent = 4)
+    
+    def getStringDistribution(self,Xs):
+        Xweights=np.array([np.mean([self.node2weight[fnode] for fnode in x[1:-1]]) for x in Xs])
+        if self.baseline!="uniform":
+           Xweights=(Xweights-Xweights.min())/(Xweights.max()-Xweights.min())
+        Xdist=np.exp(Xweights)/np.exp(Xweights).sum()
+        return Xdist
+    
+    def transformStrings(self,k,curXs,Xdist):
+        Xind1,Xind2=np.random.choice(np.arange(len(curXs)),size=2,replace=False,p=Xdist)
+        Xpairs=eval("self."+self.k2func[k])(curXs[Xind1],curXs[Xind2])
+        if len(Xpairs)>=1:
+            nX1,nX2=random.choice(Xpairs)
+            nXs=curXs.copy()
+            nXs[Xind1],nXs[Xind2]=nX1,nX2
+        else:
+            nXs=curXs
+        return nXs
+        
+    def exploreNeighborK(self,k,curPs,curQs,Pdist,Qdist):
+        # sample the pair based on metrics, without enumeration through operating choices
+        if self.enumFlag==False:            
+            curRes=self.evaluate(curPs,curQs)
+            nPs=self.transformStrings(k,curPs,Pdist)
+            nQs=self.transformStrings(k,curQs,Qdist)
+            nRes=self.evaluate(nPs,nQs)
+            if nRes[0]<curRes[0]:
+                curPs,curQs,curRes=nPs,nQs,nRes
 
-      
-for i in range(10):
-    S=Scenario("ACF6","ACF6-SC%d"%i,"PAX")
-    solver=VNSSolver(S,0)
-    solver.generateVNSRecoveryPlan(*solver.VNS(100))
+        # random sample the pair + full enumeration through operating choices
+        else:
+            curRes=self.evaluate(curPs,curQs)
+            Pind1,Pind2=random.sample(range(len(curPs)),2)
+            for (nP1,nP2) in eval("self."+self.k2func[k])(curPs[Pind1],curPs[Pind2]):
+                nPs=curPs.copy()
+                nPs[Pind1],nPs[Pind2]=nP1,nP2
+                for i in range(len(curQs)):
+                    Qind1,Qind2=random.sample(range(len(curQs)),2)        
+                    for (nQ1,nQ2) in eval("self."+self.k2func[k])(curQs[Qind1],curQs[Qind2]):
+                        nQs=curQs.copy()
+                        nQs[Qind1],nQs[Qind2]=nQ1,nQ2
+                        nRes=self.evaluate(nPs,nQs)
+                        if nRes[0]<curRes[0]:
+                            curPs,curQs,curRes=nPs,nQs,nRes
+        return curPs,curQs,curRes    
 
+    def VNS(self,numIt=10):
+        minPs,minQs=self.skdPs,self.skdQs
+        minRes=self.evaluate(minPs,minQs)
+        for i in range(numIt):
+            k=0
+            while k<=3:
+                Pdist=self.getStringDistribution(minPs)
+                Qdist=self.getStringDistribution(minQs)
+                curPs,curQs,curRes=self.exploreNeighborK(k,minPs,minQs,Pdist,Qdist)
+                if curRes[0]<minRes[0]:
+                    minPs,minQs,minRes=curPs,curQs,curRes
+                else:
+                    k+=1
+        return minPs,minQs,minRes
+    
+    
+def runVNS(config):
+    res=[]
+    S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
+    for seed in range(config["EPISODES"]):
+        solver=VNSSolver(S,seed,config["BASELINE"],config["ENUMFLAG"])
+        res.append(solver.VNS(config["ITERATIONS"])[2][0])
 
+    np.savez_compressed('Results/%s/res_%s'%(config["SCENARIO"],config["BASELINE"]),res=res)
+
+if __name__ == '__main__':
+    for base in ["degree","uniform","distance"]:
+        
+        config={"DATASET":"ACF7",
+                "SCENARIO":"ACF7-SC1",
+                "BASELINE":base, # degree/uniform/distance
+                "ITERATIONS":5,
+                "ENUMFLAG":False,
+                "EPISODES":2200
+                }
+        runVNS(config)
+        print(base,"finished")
+    

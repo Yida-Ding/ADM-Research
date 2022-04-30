@@ -7,7 +7,7 @@ from ResultAnalyzer import mainResultAnalyzer
 
 def main(dataset,scenario,seed=0):
     SC=ScenarioGenerator(dataset,scenario,seed)
-    delayinfo=SC.getRandomFlightDelay(2)
+    delayinfo=SC.getRandomFlightDelay(3)
     SC.setFlightDepartureDelay(delayinfo)
     SC.setDelayedReadyTime({})
     try:
@@ -33,7 +33,7 @@ def runCPLEX(dataset,scenario):
 
 def runMain(dataset):
     seed=0
-    for i in range(10):
+    for i in range(5):
         while True:
             flag=main(dataset,dataset+"-SC%d"%i,seed)
             if flag:
@@ -42,6 +42,9 @@ def runMain(dataset):
             else:
                 seed+=1
 
-runMain("ACF6")
-#main("ACF5","ACF5-SC9")
+
+main("ACF7","ACF7-SC1",7)
+
+
+
 

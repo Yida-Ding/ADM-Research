@@ -24,6 +24,7 @@ class Scenario:
         self.dfpassenger=pd.read_csv("Datasets/"+direname+"/Passenger.csv",na_filter=None)
         self.flight2scheduleAT={row.Flight:row.SAT for row in self.dfschedule.itertuples()}
         self.flight2scheduleDT={row.Flight:row.SDT for row in self.dfschedule.itertuples()}
+        self.airports=set(self.dfschedule["From"])|set(self.dfschedule["To"])
         
         #load from Scenario
         self.dfdrpschedule=pd.read_csv("Scenarios/"+scname+"/DrpSchedule.csv",na_filter=None)
