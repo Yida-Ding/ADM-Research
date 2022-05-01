@@ -38,13 +38,15 @@ class PolicyGradientNetwork(keras.Model):
         return pi
 
 class Agent:
-    def __init__(self, n_actions, lr, gamma, fc1_dims, fc2_dims):
+    def __init__(self, n_actions, lr, gamma, fc1_dims, fc2_dims, policy=None):
         self.gamma = gamma
         self.lr = lr
         self.n_actions = n_actions
         self.state_memory, self.action_memory, self.reward_memory = [], [], []
         self.policy = PolicyGradientNetwork(n_actions, fc1_dims, fc2_dims)    # policy is keras.Model object, with compile function
         self.policy.compile(optimizer=Adam(learning_rate=self.lr))
+        if policy != None:
+            self.policy.load_weights('Results/%s/%s/%s'%(policy[0], policy[1], policy[1]))
 
     def choose_action(self, state):
         probs = self.policy(state)      # same as self.policy.call(state), i.e. feed-forward
@@ -60,7 +62,7 @@ class Agent:
         self.reward_memory.append(reward)
 
     def learn(self):
-        actions = tf.convert_to_tensor(self.action_memory, dtype=tf.float64)
+        actions = tf.convert_to_tensor(self.action_memory, dtype=tf.float32)
         rewards = np.array(self.reward_memory)
         
         # G: 1-D array, G[t]: sum of discounted future rewards from t
@@ -76,7 +78,7 @@ class Agent:
         with tf.GradientTape() as tape:
             loss = 0
             for idx, (g, state) in enumerate(zip(G, self.state_memory)):
-                state = tf.convert_to_tensor([state], dtype=tf.float64)
+                state = tf.convert_to_tensor([state], dtype=tf.float32)
                 probs = self.policy(state)
                 action_probs = tfp.distributions.Categorical(probs=probs)
                 log_prob = action_probs.log_prob(actions[idx])
@@ -129,11 +131,13 @@ class ADMEnvironment(VNSSolver):
         self.lastObj = curObj
         return self.string2tensor(self.lastStrState), reward
         
-
-def train(config):
+# EXISTPOLICY = None : training from pure randomness,
+# EXISTPOLICY = (scenario, policy) : transfer learning with a pretrained policy network
+def train_and_test(config):
     S = Scenario(config["DATASET"], config["SCENARIO"], "PAX")
-    env = ADMEnvironment(S, config["SEED"])
-    agent = Agent(n_actions=env.n_actions, lr=config["ALPHA"], gamma=config["GAMMA"], fc1_dims=config["FC1DIMS"], fc2_dims=config["FC2DIMS"])
+    env = ADMEnvironment(S, config["SEED"])    
+    agent = Agent(n_actions=env.n_actions, lr=config["ALPHA"], gamma=config["GAMMA"], \
+                  fc1_dims=config["FC1DIMS"], fc2_dims=config["FC2DIMS"], policy=config["EXISTPOLICY"])
     print('|Action| = ', env.n_actions)
     
     episodeObjs = []
@@ -152,23 +156,26 @@ def train(config):
         print('episode: {:>3}'.format(episode),' reward: {:>5.1f} '.format(episodeReward), ' objective: {:>6.1f} '.format(env.lastObj))
     
     np.savez_compressed('Results/%s/res_DRL'%config["SCENARIO"], res=episodeObjs)
-    agent.policy.save('Results/%s/Policy_%s'%(config["SCENARIO"],config["EPISODE"]))
-    
+    if not os.path.exists('Results/%s/Policy_%s'%(config["SCENARIO"], config["EPISODE"])):
+        os.makedirs('Results/%s/Policy_%s'%(config["SCENARIO"], config["EPISODE"]))
+    agent.policy.save_weights('Results/%s/Policy_%s/Policy_%s'%(config["SCENARIO"], config["EPISODE"], config["EPISODE"]))
+        
 
 if __name__ == '__main__':
     
     config = {"DATASET": "ACF5",
-              "SCENARIO": "ACF5-SC1",
+              "SCENARIO": "ACF5-SC2",
               "SEED": 0,
-              "EPISODE": 800,
+              "EPISODE": 100,
               "TRAJLEN": 5,
               "ALPHA": 0.001,
               "GAMMA": 0.9,
               "FC1DIMS": 256,
-              "FC2DIMS": 256
+              "FC2DIMS": 256,
+              "EXISTPOLICY": ("ACF5-SC1", "Policy_800")
               }
     
-    train(config)
+    train_and_test(config)
 
 
 

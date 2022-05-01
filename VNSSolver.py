@@ -334,7 +334,11 @@ class VNSSolver:
                 else:
                     k+=1
         return minPs,minQs,minRes
-    
+
+def runVNSWithEnumSaveSolution(config):
+    S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
+    solver=VNSSolver(S,0,config["BASELINE"],config["ENUMFLAG"])
+    solver.generateVNSRecoveryPlan(*solver.VNS(config["ITERATIONS"]))
     
 def runVNS(config):
     res=[]
@@ -346,15 +350,28 @@ def runVNS(config):
     np.savez_compressed('Results/%s/res_%s'%(config["SCENARIO"],config["BASELINE"]),res=res)
 
 if __name__ == '__main__':
-    for base in ["degree","uniform","distance"]:
-        
-        config={"DATASET":"ACF7",
-                "SCENARIO":"ACF7-SC1",
-                "BASELINE":base, # degree/uniform/distance
-                "ITERATIONS":5,
-                "ENUMFLAG":False,
-                "EPISODES":2200
-                }
-        runVNS(config)
-        print(base,"finished")
+    
+    config={"DATASET":"ACF5",
+            "SCENARIO":"ACF5-SC2",
+            "BASELINE":"uniform", # degree/uniform/distance
+            "ITERATIONS":100,
+            "ENUMFLAG":True,
+            "EPISODES":1
+            }
+    
+    runVNSWithEnumSaveSolution(config)
+    
+    
+    
+#    for base in ["degree","uniform","distance"]:
+#        
+#        config={"DATASET":"ACF5",
+#                "SCENARIO":"ACF5-SC2",
+#                "BASELINE":base, # degree/uniform/distance
+#                "ITERATIONS":5,
+#                "ENUMFLAG":False,
+#                "EPISODES":2200
+#                }
+#        runVNS(config)
+#        print(base,"finished")
     

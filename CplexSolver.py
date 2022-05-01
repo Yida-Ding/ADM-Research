@@ -43,7 +43,7 @@ def runMain(dataset):
                 seed+=1
 
 
-main("ACF7","ACF7-SC1",7)
+main("ACF5","ACF5-SC2",48)
 
 
 
