@@ -8,7 +8,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.layers import Dense
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-
+tf.autograph.set_verbosity(0)
 from NetworkGenerator import Scenario
 from VNSSolver import VNSSolver
 
@@ -22,7 +22,7 @@ action_idx: scalar, n_actions
 '''
 
 class PolicyGradientNetwork(keras.Model):
-    def __init__(self, n_actions, fc1_dims=256, fc2_dims=256):
+    def __init__(self, n_actions, fc1_dims, fc2_dims):
         super().__init__()
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
@@ -38,12 +38,12 @@ class PolicyGradientNetwork(keras.Model):
         return pi
 
 class Agent:
-    def __init__(self, n_actions, lr=0.003, gamma=0.99, layer1_size=256, layer2_size=256):
+    def __init__(self, n_actions, lr, gamma, fc1_dims, fc2_dims):
         self.gamma = gamma
         self.lr = lr
         self.n_actions = n_actions
         self.state_memory, self.action_memory, self.reward_memory = [], [], []
-        self.policy = PolicyGradientNetwork(n_actions=n_actions)    # policy is keras.Model object, with compile function
+        self.policy = PolicyGradientNetwork(n_actions, fc1_dims, fc2_dims)    # policy is keras.Model object, with compile function
         self.policy.compile(optimizer=Adam(learning_rate=self.lr))
 
     def choose_action(self, state):
@@ -129,34 +129,46 @@ class ADMEnvironment(VNSSolver):
         self.lastObj = curObj
         return self.string2tensor(self.lastStrState), reward
         
-            
 
-if __name__ == '__main__':
-    S = Scenario("ACF7","ACF7-SC1","PAX")
-    env = ADMEnvironment(S,0)
-    agent = Agent(n_actions=env.n_actions, lr=0.001, gamma=0.9)
-    print('number of actions: ', env.n_actions)
+def train(config):
+    S = Scenario(config["DATASET"], config["SCENARIO"], "PAX")
+    env = ADMEnvironment(S, config["SEED"])
+    agent = Agent(n_actions=env.n_actions, lr=config["ALPHA"], gamma=config["GAMMA"], fc1_dims=config["FC1DIMS"], fc2_dims=config["FC2DIMS"])
+    print('|Action| = ', env.n_actions)
     
-    res = []
-    for episode in range(2200):
+    episodeObjs = []
+    for episode in range(config["EPISODE"]):
         state = env.reset()
-        totalreward = 0
-        for i in range(5):
+        episodeReward = 0
+        for i in range(config["TRAJLEN"]):
             action = agent.choose_action(state)
             nextstate, reward = env.step(action)
             agent.store_transition(state, action, reward)
             state = nextstate
-            totalreward += reward
+            episodeReward += reward
             
         agent.learn()
-        res.append(env.lastObj)
-        print('episode: {:>3}'.format(episode),' reward: {:>5.1f} '.format(totalreward), ' objective: {:>6.1f} '.format(env.lastObj))
+        episodeObjs.append(env.lastObj)
+        print('episode: {:>3}'.format(episode),' reward: {:>5.1f} '.format(episodeReward), ' objective: {:>6.1f} '.format(env.lastObj))
     
-    np.savez_compressed('Results/ACF7-SC1/res_DRL',res=res)
+    np.savez_compressed('Results/%s/res_DRL'%config["SCENARIO"], res=episodeObjs)
+    agent.policy.save('Results/%s/Policy_%s'%(config["SCENARIO"],config["EPISODE"]))
+    
 
-
-
-
+if __name__ == '__main__':
+    
+    config = {"DATASET": "ACF5",
+              "SCENARIO": "ACF5-SC1",
+              "SEED": 0,
+              "EPISODE": 800,
+              "TRAJLEN": 5,
+              "ALPHA": 0.001,
+              "GAMMA": 0.9,
+              "FC1DIMS": 256,
+              "FC2DIMS": 256
+              }
+    
+    train(config)
 
 
 
