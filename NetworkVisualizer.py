@@ -104,6 +104,6 @@ if __name__ == '__main__':
     V=Visualizer("ACF5","ACF5-SC2")
     V.plotFlightNetwork(*V.getScheduleData())
     V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
-    V.plotFlightNetwork(*V.getRecoveryData("VNS"))
+#    V.plotFlightNetwork(*V.getRecoveryData("VNS"))
     
-    
+

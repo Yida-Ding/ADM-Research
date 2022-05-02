@@ -1,7 +1,7 @@
 {
     "DelayCost": 2239.87419,
-    "ExtraFuelCost": 0.00035188719630241394,
+    "ExtraFuelCost": 2.9747840017080307e-05,
     "CancelCost": 0,
     "FollowGain": -54.70000000000021,
-    "Objective": 2185.1748012667085
+    "Objective": 2185.1745370140125
 }

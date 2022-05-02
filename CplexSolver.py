@@ -43,7 +43,10 @@ def runMain(dataset):
                 seed+=1
 
 
-main("ACF5","ACF5-SC2",48)
+if __name__ == '__main__':
+    #main("ACF5","ACF5-SC2",48)
+    runCPLEX("ACF5","ACF5-SC2")
+        
 
 
 

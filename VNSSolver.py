@@ -11,7 +11,7 @@ import networkx as nx
 from NetworkGenerator import Scenario
 
 class VNSSolver:
-    def __init__(self,S,seed,baseline="uniform",enumFlag=False):
+    def __init__(self,S,seed,baseline="distance",enumFlag=False):
         self.S=S
         random.seed(seed)
         np.random.seed(seed)
@@ -33,7 +33,7 @@ class VNSSolver:
         if baseline=="uniform": # uniform probability to be operated
             self.node2weight={self.S.FNode2name[node]:1 for node in self.S.FNodes}
         elif baseline=="degree": # larger degree indicates higher probability to be operated
-            self.node2weight={self.S.FNode2name[node]:1/deg for node,deg in undirectGraph.degree()}
+            self.node2weight={self.S.FNode2name[node]:deg for node,deg in undirectGraph.degree()}
         elif baseline=="distance":  # smaller distance indicates higher probability to be operated
             self.node2weight={}
             for drpNode in self.S.drpFNodes:
@@ -320,7 +320,7 @@ class VNSSolver:
                             curPs,curQs,curRes=nPs,nQs,nRes
         return curPs,curQs,curRes    
 
-    def VNS(self,numIt=10):
+    def VNS(self,numIt):
         minPs,minQs=self.skdPs,self.skdQs
         minRes=self.evaluate(minPs,minQs)
         for i in range(numIt):
@@ -345,33 +345,40 @@ def runVNS(config):
     S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
     for seed in range(config["EPISODES"]):
         solver=VNSSolver(S,seed,config["BASELINE"],config["ENUMFLAG"])
-        res.append(solver.VNS(config["ITERATIONS"])[2][0])
+        objective=solver.VNS(config["ITERATIONS"])[2][0]
+        res.append(objective)
+        print('episode: {:>3}'.format(seed), ' objective: {:>6.1f} '.format(objective))
 
     np.savez_compressed('Results/%s/res_%s'%(config["SCENARIO"],config["BASELINE"]),res=res)
 
 if __name__ == '__main__':
     
-    config={"DATASET":"ACF5",
-            "SCENARIO":"ACF5-SC2",
-            "BASELINE":"uniform", # degree/uniform/distance
-            "ITERATIONS":100,
-            "ENUMFLAG":True,
-            "EPISODES":1
-            }
+#    config={"DATASET":"ACF5",
+#            "SCENARIO":"ACF5-SC1",
+#            "BASELINE":"uniform", # degree/uniform/distance
+#            "ITERATIONS":100,
+#            "ENUMFLAG":True,
+#            "EPISODES":1
+#            }
+#    runVNSWithEnumSaveSolution(config)
     
-    runVNSWithEnumSaveSolution(config)
-    
-    
-    
-#    for base in ["degree","uniform","distance"]:
-#        
-#        config={"DATASET":"ACF5",
-#                "SCENARIO":"ACF5-SC2",
-#                "BASELINE":base, # degree/uniform/distance
-#                "ITERATIONS":5,
-#                "ENUMFLAG":False,
-#                "EPISODES":2200
-#                }
-#        runVNS(config)
-#        print(base,"finished")
+    for base in ["uniform","degree","distance"]:
+        
+        config={"DATASET": "ACF7",
+                "SCENARIO": "ACF7-SC1",
+                "BASELINE": base, # degree/uniform/distance
+                "ITERATIONS": 5,
+                "ENUMFLAG": False,
+                "EPISODES": 2500
+                }
+        
+        runVNS(config)
+        print(base,"finished")
+        
+        
+        
+        
+        
+        
+        
     
