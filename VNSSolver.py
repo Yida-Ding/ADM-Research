@@ -296,12 +296,10 @@ class VNSSolver:
     def exploreNeighborK(self,k,curPs,curQs,Pdist,Qdist):
         # sample the pair based on metrics, without enumeration through operating choices
         if self.enumFlag==False:            
-            curRes=self.evaluate(curPs,curQs)
             nPs=self.transformStrings(k,curPs,Pdist)
             nQs=self.transformStrings(k,curQs,Qdist)
             nRes=self.evaluate(nPs,nQs)
-            if nRes[0]<curRes[0]:
-                curPs,curQs,curRes=nPs,nQs,nRes
+            return nPs,nQs,nRes
 
         # random sample the pair + full enumeration through operating choices
         else:
@@ -318,12 +316,12 @@ class VNSSolver:
                         nRes=self.evaluate(nPs,nQs)
                         if nRes[0]<curRes[0]:
                             curPs,curQs,curRes=nPs,nQs,nRes
-        return curPs,curQs,curRes    
+            return curPs,curQs,curRes    
 
-    def VNS(self,numIt):
+    def VNS(self,trajLen):
         minPs,minQs=self.skdPs,self.skdQs
         minRes=self.evaluate(minPs,minQs)
-        for i in range(numIt):
+        for i in range(trajLen):
             k=0
             while k<=3:
                 Pdist=self.getStringDistribution(minPs)
@@ -338,14 +336,14 @@ class VNSSolver:
 def runVNSWithEnumSaveSolution(config):
     S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
     solver=VNSSolver(S,0,config["BASELINE"],config["ENUMFLAG"])
-    solver.generateVNSRecoveryPlan(*solver.VNS(config["ITERATIONS"]))
+    solver.generateVNSRecoveryPlan(*solver.VNS(config["TRAJLEN"]))
     
 def runVNS(config):
     res=[]
     S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
     for seed in range(config["EPISODES"]):
         solver=VNSSolver(S,seed,config["BASELINE"],config["ENUMFLAG"])
-        objective=solver.VNS(config["ITERATIONS"])[2][0]
+        objective=solver.VNS(config["TRAJLEN"])[2][0]
         res.append(objective)
         print('episode: {:>3}'.format(seed), ' objective: {:>6.1f} '.format(objective))
 
@@ -356,7 +354,7 @@ if __name__ == '__main__':
 #    config={"DATASET":"ACF5",
 #            "SCENARIO":"ACF5-SC1",
 #            "BASELINE":"uniform", # degree/uniform/distance
-#            "ITERATIONS":100,
+#            "TRAJLEN":100,
 #            "ENUMFLAG":True,
 #            "EPISODES":1
 #            }
@@ -367,7 +365,7 @@ if __name__ == '__main__':
         config={"DATASET": "ACF7",
                 "SCENARIO": "ACF7-SC1",
                 "BASELINE": base, # degree/uniform/distance
-                "ITERATIONS": 5,
+                "TRAJLEN": 5,
                 "ENUMFLAG": False,
                 "EPISODES": 2500
                 }

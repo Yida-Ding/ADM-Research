@@ -109,7 +109,9 @@ class ADMEnvironment(VNSSolver):
     def string2tensor(self, strState):        
         distcol = np.array([np.concatenate([strState[-2],strState[-1]])]).T        
         flightidx = [[self.flt2idx[flt] for flt in P[1:-1]] for P in strState[0]+strState[1]]
-        return tf.concat([distcol,tf.ragged.constant(flightidx, dtype=tf.float32).to_tensor()],1)
+        state2D = tf.concat([distcol,tf.ragged.constant(flightidx, dtype=tf.float32).to_tensor()],1)
+        state1D = tf.reshape(state2D, [-1])
+        return state2D
         
     def step(self, action_idx):
         k1, k2, pindpair, qindpair = self.idx2action[action_idx]
@@ -160,7 +162,7 @@ def train_and_test(config):
         print('episode: {:>3}'.format(episode),' reward: {:>5.1f} '.format(episodeReward), ' objective: {:>6.1f} '.format(env.lastObj))
     
     if config["SAVERESULT"]:
-        np.savez_compressed('Results/%s/res_DRL'%config["SCENARIO"], res=episodeObjs)
+        np.savez_compressed('Results/%s/res_RFC'%config["SCENARIO"], res=episodeObjs)
     if config["SAVEPOLICY"]:
         if not os.path.exists('Results/%s/Policy_%s'%(config["SCENARIO"], config["EPISODE"])):
             os.makedirs('Results/%s/Policy_%s'%(config["SCENARIO"], config["EPISODE"]))
@@ -172,14 +174,14 @@ if __name__ == '__main__':
     config = {"DATASET": "ACF7",
               "SCENARIO": "ACF7-SC1",
               "SEED": 0,
-              "EPISODE": 2000,
+              "EPISODE": 2500,
               "TRAJLEN": 5,
               "ALPHA": 0.001,
               "GAMMA": 0.9,
               "FC1DIMS": 256,
               "FC2DIMS": 256,
               "EXISTPOLICY": None,
-              "SAVERESULT": False,
+              "SAVERESULT": True,
               "SAVEPOLICY": False
               }
     

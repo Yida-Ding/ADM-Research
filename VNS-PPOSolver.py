@@ -1,75 +1,170 @@
 import os
-import itertools
+import gym
 import numpy as np
-import tensorflow as tf
-import tensorflow.keras as keras
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.optimizers import Adam
-import tensorflow_probability as tfp
-tf.autograph.set_verbosity(0)
-import logging
-logging.getLogger("tensorflow").setLevel(logging.ERROR)
-
+import itertools
+import torch as T
+import torch.nn as nn
+import torch.optim as optim
+from torch.distributions.categorical import Categorical
 from NetworkGenerator import Scenario
 from VNSSolver import VNSSolver
 
-class ActorNetwork(keras.Model):
-    def __init__(self, n_actions, fc1_dims, fc2_dims):
-        super(ActorNetwork, self).__init__()
-        self.fc1 = Dense(fc1_dims, activation='relu')
-        self.fc2 = Dense(fc2_dims, activation='relu')
-        self.fc3 = Dense(n_actions, activation='softmax')
+class PPOMemory:
+    def __init__(self, batch_size):
+        self.states, self.probs, self.vals, self.actions, self.rewards = [], [], [], [], []
+        self.batch_size = batch_size
 
-    def call(self, state):
-        data = self.fc1(state)
-        data = self.fc2(data)
-        actionProb = self.fc3(data)
-        return actionProb
+    def generate_batches(self):
+        n_states = len(self.states)
+        batch_start = np.arange(0, n_states, self.batch_size)
+        indices = np.arange(n_states, dtype=np.int64)
+        np.random.shuffle(indices)
+        batches = [indices[i:i+self.batch_size] for i in batch_start]
+        return np.array(self.states), np.array(self.actions), np.array(self.probs),\
+                np.array(self.vals), np.array(self.rewards), batches                                
         
-class CriticNetwork(keras.Model):
-    def __init__(self, fc1_dims, fc2_dims):
+    def store_memory(self, state, action, probs, vals, reward):
+        self.states.append(state); self.actions.append(action); self.probs.append(probs)
+        self.vals.append(vals); self.rewards.append(reward)
+
+    def clear_memory(self):
+        self.states, self.probs, self.vals, self.actions, self.rewards = [], [], [], [], []        
+
+class ActorNetwork(nn.Module):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims, fc2_dims):
+        super(ActorNetwork, self).__init__()
+        self.actor = nn.Sequential(
+                nn.Linear(*input_dims, fc1_dims),
+                nn.ReLU(),
+                nn.Linear(fc1_dims, fc2_dims),
+                nn.ReLU(),
+                nn.Linear(fc2_dims, n_actions),
+                nn.Softmax(dim=-1))
+        
+        self.optimizer = optim.Adam(self.parameters(), lr=alpha)
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.to(self.device)
+
+    def forward(self, state):
+        dist = self.actor(state)
+        dist = Categorical(dist)
+        return dist        
+
+class CriticNetwork(nn.Module):
+    def __init__(self, input_dims, alpha, fc1_dims, fc2_dims):
         super(CriticNetwork, self).__init__()
-        self.fc1 = Dense(fc1_dims, activation='relu')
-        self.fc2 = Dense(fc2_dims, activation='relu')
-        self.q = Dense(1, activation=None)
-    
-    def call(self, state):
-        data = self.fc1(state)
-        data = self.fc2(data)
-        stateValue = self.q(data)
-        return stateValue
+        self.critic = nn.Sequential(
+                nn.Linear(*input_dims, fc1_dims),
+                nn.ReLU(),
+                nn.Linear(fc1_dims, fc2_dims),
+                nn.ReLU(),
+                nn.Linear(fc2_dims, 1))
 
+        self.optimizer = optim.Adam(self.parameters(), lr=alpha)
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.to(self.device)
 
+    def forward(self, state):
+        value = self.critic(state)
+        return value    
+
+class Agent:
+    def __init__(self, n_actions, input_dims, fc1_dims, fc2_dims, gamma, alpha, \
+                 gae_lambda, policy_clip, batch_size, n_epochs, chkpt_dir):
+        self.gamma = gamma
+        self.policy_clip = policy_clip
+        self.n_epochs = n_epochs
+        self.gae_lambda = gae_lambda
+        self.actor = ActorNetwork(n_actions, input_dims, alpha, fc1_dims, fc2_dims)
+        self.critic = CriticNetwork(input_dims, alpha, fc1_dims, fc2_dims)
+        self.memory = PPOMemory(batch_size)        
+        
+    def choose_action(self, observation):
+        state = T.tensor([observation], dtype=T.float).to(self.actor.device)
+        dist = self.actor(state)
+        value = self.critic(state)
+        action = dist.sample()
+        probs = T.squeeze(dist.log_prob(action)).item()
+        action = T.squeeze(action).item()
+        value = T.squeeze(value).item()
+        return action, probs, value
+        
+    def store_transition(self, state, action, probs, vals, reward):
+        self.memory.store_memory(state, action, probs, vals, reward)
+
+    def learn(self):
+        for _ in range(self.n_epochs):
+            state_arr, action_arr, old_prob_arr, vals_arr, reward_arr, batches = \
+                    self.memory.generate_batches()
+            values = vals_arr
+            advantage = np.zeros(len(reward_arr), dtype=np.float32)
+
+            for t in range(len(reward_arr)-1):
+                discount = 1
+                a_t = 0
+                for k in range(t, len(reward_arr)-1):
+                    a_t += discount*(reward_arr[k] + self.gamma*values[k+1] - values[k])
+                    discount *= self.gamma*self.gae_lambda
+                advantage[t] = a_t
+            advantage = T.tensor(advantage).to(self.actor.device)
+
+            values = T.tensor(values).to(self.actor.device)
+            for batch in batches:
+                states = T.tensor(state_arr[batch], dtype=T.float).to(self.actor.device)
+                old_probs = T.tensor(old_prob_arr[batch]).to(self.actor.device)
+                actions = T.tensor(action_arr[batch]).to(self.actor.device)
+                dist = self.actor(states)
+                critic_value = self.critic(states)
+                critic_value = T.squeeze(critic_value)
+
+                new_probs = dist.log_prob(actions)
+                prob_ratio = new_probs.exp() / old_probs.exp()
+                weighted_probs = advantage[batch] * prob_ratio
+                weighted_clipped_probs = T.clamp(prob_ratio, 1-self.policy_clip, 1+self.policy_clip)*advantage[batch]
+                actor_loss = -T.min(weighted_probs, weighted_clipped_probs).mean()
+
+                returns = advantage[batch] + values[batch]
+                critic_loss = (returns-critic_value)**2
+                critic_loss = critic_loss.mean()
+
+                total_loss = actor_loss + 0.5*critic_loss
+                self.actor.optimizer.zero_grad()
+                self.critic.optimizer.zero_grad()
+                total_loss.backward()
+                self.actor.optimizer.step()
+                self.critic.optimizer.step()
+
+        self.memory.clear_memory()     
+
+         
 class ADMEnvironment(VNSSolver):
     def __init__(self, S, seed):
         super().__init__(S, seed)
         self.flt2idx = {flt:idx+1 for idx, flt in enumerate(self.flts)}
         self.ap2idx = {ap:idx+1 for idx, ap in enumerate(self.S.airports)}
-        self.skdPdist = self.getStringDistribution(self.skdPs) 
-        self.skdQdist = self.getStringDistribution(self.skdQs)
-        self.skdStrState = (self.skdPs, self.skdQs, self.skdPdist, self.skdQdist)
+        self.skdStrState = (self.skdPs, self.skdQs)
         self.stateShape = self.string2tensor(self.skdStrState).shape
-    
+
         # prepare action_tuples and idx2action                
         pindpairs = itertools.combinations(range(len(self.skdPs)), 2)
         qindpairs = itertools.combinations(range(len(self.skdQs)), 2)
         combs = itertools.product(range(4), range(4), pindpairs, qindpairs)
         self.idx2action = {idx:comb for idx, comb in enumerate(combs)}
-        self.n_actions = len(self.idx2action)        
+        self.n_actions = len(self.idx2action)
     
     def reset(self):
         self.lastStrState = self.skdStrState
-        self.lastObj = self.evaluate(*self.skdStrState[:2])[0]
+        self.lastObj = self.evaluate(*self.skdStrState)[0]
         return self.string2tensor(self.skdStrState)
 
-    def string2tensor(self, strState):        
-        distcol = np.array([np.concatenate([strState[-2],strState[-1]])]).T        
+    def string2tensor(self, strState):
         flightidx = [[self.flt2idx[flt] for flt in P[1:-1]] for P in strState[0]+strState[1]]
-        return tf.concat([distcol,tf.ragged.constant(flightidx, dtype=tf.float32).to_tensor()],1)
+        padarray = np.array(list(itertools.zip_longest(*flightidx, fillvalue=0)),dtype=np.float32).T.flatten()
+        return padarray
         
     def step(self, action_idx):
         k1, k2, pindpair, qindpair = self.idx2action[action_idx]
-        curPs, curQs = self.lastStrState[:2]
+        curPs, curQs = self.lastStrState
         curObj = self.lastObj
         
         for (nP1, nP2) in eval("self."+self.k2func[k1])(curPs[pindpair[0]], curPs[pindpair[1]]):
@@ -83,123 +178,13 @@ class ADMEnvironment(VNSSolver):
                     curPs, curQs, curObj = nPs, nQs, nObj
         
         reward = self.lastObj - curObj
-        curPdist = self.getStringDistribution(curPs) 
-        curQdist = self.getStringDistribution(curQs)
-        self.lastStrState = (curPs, curQs, curPdist, curQdist)
+        self.lastStrState = (curPs, curQs)
         self.lastObj = curObj
         return self.string2tensor(self.lastStrState), reward
-    
-class PPOMemory:
-    def __init__(self, batch_size):
-        self.states, self.probs, self.vals, self.actions, self.rewards = [], [], [], [], []
-        self.batch_size = batch_size
-
-    def generate_batches(self):
-        n_states = len(self.states)
-        batch_start = np.arange(0, n_states, self.batch_size)
-        indices = np.arange(n_states, dtype=np.int64)
-        np.random.shuffle(indices)
-        batches = [indices[i:i+self.batch_size] for i in batch_start]
-        return np.array(self.states), np.array(self.actions), np.array(self.probs),\
-                np.array(self.vals), np.array(self.rewards), batches
-
-    def store_memory(self, state, action, probs, vals, reward):
-        self.states.append(state); self.actions.append(action); self.probs.append(probs)
-        self.vals.append(vals); self.rewards.append(reward)
-
-    def clear_memory(self):
-        self.states, self.probs, self.vals, self.actions, self.rewards = [], [], [], [], []
-
-
-class Agent:
-    def __init__(self, n_actions, input_dims, fc1_dims, fc2_dims, gamma, alpha, \
-                 gae_lambda, policy_clip, batch_size, n_epochs, chkpt_dir):
-        self.n_actions = n_actions
-        self.gamma = gamma
-        self.policy_clip = policy_clip
-        self.n_epochs = n_epochs
-        self.gae_lambda = gae_lambda
-        self.chkpt_dir = chkpt_dir
         
-        self.actor = ActorNetwork(n_actions,fc1_dims, fc2_dims)
-        self.actor.compile(optimizer=Adam(learning_rate=alpha))
-        self.critic = CriticNetwork(fc1_dims, fc2_dims)
-        self.critic.compile(optimizer=Adam(learning_rate=alpha))
-        self.memory = PPOMemory(batch_size)
-
-    def store_transition(self, state, action, probs, vals, reward):
-        self.memory.store_memory(state, action, probs, vals, reward)
-
-    def save_models(self):
-        if not os.path.exists(self.chkpt_dir):
-            os.makedirs(self.chkpt_dir)
-        self.actor.save_weights(self.chkpt_dir + '/Actor')
-        self.critic.save_weights(self.chkpt_dir + '/Critic')
-
-    def choose_action(self, state):
-        probs = self.actor(state)
-        dist = tfp.distributions.Categorical(probs)
-        action = dist.sample()
-        log_prob = dist.log_prob(action)
-        value = self.critic(state)
-        if action.numpy()[0] == self.n_actions:
-            action = self.n_actions-1
-        else:
-            action = action.numpy()[0]
-
-        value = value.numpy()[0]
-        log_prob = log_prob.numpy()[0]
-        return action, log_prob, value
-
-    def learn(self):
-        for _ in range(self.n_epochs):
-            state_arr, action_arr, old_prob_arr, vals_arr, reward_arr, batches = self.memory.generate_batches()
-            values = vals_arr
-            advantage = np.zeros(len(reward_arr), dtype=np.float32)
-            
-            for t in range(len(reward_arr)-1):
-                discount = 1
-                a_t = 0
-                for k in range(t, len(reward_arr)-1):
-                    a_t += discount*(reward_arr[k] + self.gamma*values[k+1] - values[k])
-                    discount *= self.gamma*self.gae_lambda
-                advantage[t] = a_t
-
-            for batch in batches:
-                with tf.GradientTape(persistent=True) as tape:
-                    states = tf.convert_to_tensor(state_arr[batch])
-                    old_probs = tf.convert_to_tensor(old_prob_arr[batch])
-                    actions = tf.convert_to_tensor(action_arr[batch])
-                    probs = self.actor(states)
-                    dist = tfp.distributions.Categorical(probs)
-                    new_probs = dist.log_prob(actions)      # there seems to be a shape mismatch... how to debug this?
-                    
-                    critic_value = self.critic(states)
-                    critic_value = tf.squeeze(critic_value, 1)
-                    
-                    prob_ratio = tf.math.exp(new_probs - old_probs)
-                    weighted_probs = advantage[batch] * prob_ratio
-                    clipped_probs = tf.clip_by_value(prob_ratio, 1-self.policy_clip, 1+self.policy_clip)
-                    weighted_clipped_probs = clipped_probs * advantage[batch]
-                    actor_loss = -tf.math.minimum(weighted_probs, weighted_clipped_probs)
-                    actor_loss = tf.math.reduce_mean(actor_loss)
-
-                    returns = advantage[batch] + values[batch]
-                    critic_loss = keras.losses.MSE(critic_value, returns)
-
-                actor_params = self.actor.trainable_variables
-                actor_grads = tape.gradient(actor_loss, actor_params)
-                critic_params = self.critic.trainable_variables
-                critic_grads = tape.gradient(critic_loss, critic_params)
-                self.actor.optimizer.apply_gradients(zip(actor_grads, actor_params))
-                self.critic.optimizer.apply_gradients(zip(critic_grads, critic_params))
-
-        self.memory.clear_memory()
     
-
-
 def train_and_test(config):
-    tf.random.set_seed(seed = config["SEED"])
+    T.manual_seed(config["SEED"])
     S = Scenario(config["DATASET"], config["SCENARIO"], "PAX")
     env = ADMEnvironment(S, config["SEED"])
     agent = Agent(n_actions=env.n_actions, input_dims=env.stateShape, fc1_dims=config["FC1DIMS"], fc2_dims=config["FC2DIMS"], \
@@ -207,7 +192,6 @@ def train_and_test(config):
                   batch_size=config["BATCHSIZE"], n_epochs=config["NEPOCH"], chkpt_dir="Results/"+config["SCENARIO"]+"/Policy_%d"%config["EPISODE"])                
     print('|Action| = ', env.n_actions)
     
-    n_steps = 0
     episodeObjs = []
     for episode in range(config["EPISODE"]):
         state = env.reset()
@@ -215,19 +199,16 @@ def train_and_test(config):
         for i in range(config["TRAJLEN"]):
             action, prob, val = agent.choose_action(state)
             nextstate, reward = env.step(action)
-            n_steps += 1
             episodeReward += reward
             agent.store_transition(state, action, prob, val, reward)
-            if n_steps % config["LEARNFREQ"] == 0:
-                agent.learn()
             state = nextstate
 
         episodeObjs.append(env.lastObj)
         print('episode: {:>3}'.format(episode),' reward: {:>5.1f} '.format(episodeReward), ' objective: {:>6.1f} '.format(env.lastObj))
-        
+        agent.learn()
     
     if config["SAVERESULT"]:
-        np.savez_compressed('Results/%s/res_DRL'%config["SCENARIO"], res=episodeObjs)
+        np.savez_compressed('Results/%s/res_PPO'%config["SCENARIO"], res=episodeObjs)
     if config["SAVEPOLICY"]:
         agent.save_models()
 
@@ -235,28 +216,21 @@ if __name__ == '__main__':
     
     config = {"DATASET": "ACF7",
               "SCENARIO": "ACF7-SC1",
-              "SEED": 1,
-              "EPISODE": 2000,
+              "SEED": 0,
+              "EPISODE": 2500,
               "TRAJLEN": 5,
               "FC1DIMS": 256,
               "FC2DIMS": 256,
-              "ALPHA": 0.001,
+              "ALPHA": 0.00001, # smaller, more likely to jump
               "GAMMA": 0.9,
               "GAELAMBDA": 0.95,
-              "POLICYCLIP": 0.2,
-              "BATCHSIZE": 64,
-              "NEPOCH": 10,
-              "LEARNFREQ": 20,                            
+              "POLICYCLIP": 1.0,    # Very Important! large clip leads to more exploration and better result
+              "BATCHSIZE": 20,
+              "NEPOCH": 2,
               "SAVERESULT": True,
-              "SAVEPOLICY": True
+              "SAVEPOLICY": False
               }
-
+    
     train_and_test(config)
-
-
-
-
-
-
-
-
+    
+    
