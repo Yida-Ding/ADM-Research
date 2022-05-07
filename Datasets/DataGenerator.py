@@ -6,6 +6,7 @@ import haversine
 import json
 import os
 import sys
+import numpy as np
 
 class Dataset:
     def __init__(self,config):
@@ -120,7 +121,7 @@ def generateDataset(direname,config):
                 break
             fltname="F%02d"%flightind
             flightind+=1
-            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)
+            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)//config["PAXSCALE"] # TODO: For simplicity
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
             itinHelper.getAvailableItinerary(fltname,origin,destination,depTime,arrTime,pax)
             flights+=[(fltname,origin,destination,depTime,arrTime,cruiseTime,crew,distance,pax)]
@@ -141,7 +142,7 @@ def generateDataset(direname,config):
             resd["Flight_time"].append(flight[4]-flight[3])
             resd["Cruise_time"].append(flight[5])
             resd["Distance"].append(flight[7])
-            resd["Capacity"].append(accap)
+            resd["Capacity"].append(accap//config["PAXSCALE"]) # TODO: For simplicity
             resd["Pax"].append(flight[8])
             resd["Timestring"].append(D.getTimeString(flight[3])+" -> "+D.getTimeString(flight[4]))
     
@@ -211,6 +212,7 @@ if __name__=='__main__':
                 "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
                 "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
                 "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
+                "PAXSCALE":1, # For simplicity, scale down the number of passengers
                 "SEED":0 # Random seed
                 }
     

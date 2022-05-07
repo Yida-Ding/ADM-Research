@@ -47,10 +47,14 @@ class ScenarioGenerator:
     def setDelayedReadyTime(self,entity2delay={}):
         with open("Scenarios/%s"%(self.scname)+"/DelayedReadyTime.json", "w") as outfile:
             json.dump(entity2delay,outfile,indent=4)
-    
+
     def getRandomFlightDelay(self,k):
-        selflights=random.sample(self.D.flights,k)
-        flight2hour={flight:random.randint(1,3) for flight in selflights}
+        selflights=random.sample(self.D.flights,int(k*len(self.D.flights)))
+        flight2hour={flight:random.uniform(0,4) for flight in selflights}
         return {flight:hour*3600 for flight,hour in flight2hour.items()}
+    
+    
+    
+    
 
         
