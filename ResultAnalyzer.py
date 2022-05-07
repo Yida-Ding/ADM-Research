@@ -141,7 +141,7 @@ class Analyzer:
         self.dfrecovery.to_csv("Results/%s/RecoveryCPLEX.csv"%(self.scenario),index=False)
         self.dfitinerary=pd.DataFrame(resdItin).sort_values(by=["Rec_itin","Skd_itin"])
         self.dfitinerary.to_csv("Results/%s/ItineraryCPLEX.csv"%(self.scenario),index=False)
-        self.flight2recdict={dic['Flight']:dic for dic in self.dfrecovery.to_dict(orient='record')}
+        self.flight2recdict={dic['Flight']:dic for dic in self.dfrecovery.to_dict(orient='records')}
     
     def displayScheduleAndRecovery(self):
         attributes=["Tail","Flight","Crew","From","To","Pax","Timestring"]

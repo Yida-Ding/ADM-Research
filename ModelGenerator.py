@@ -43,6 +43,7 @@ class MIPModel:
             self.problem.variables.add(names=self.itinVariables,types=['B']*len(self.itinVariables))
             
         lin_exp,rhs,senses,names=zip(*self.constraintData)
+        lin_exp,rhs,senses,names=list(lin_exp),list(rhs),list(senses),list(names)
         self.problem.linear_constraints.add(lin_expr=lin_exp,rhs=rhs,senses=senses,names=names)   
         self.problem.objective.set_linear(self.objectiveData)
         self.problem.objective.set_offset(-sum([node.ScheFuelConsump for node in self.S.FNodes])*self.S.config["FUELCOSTPERKG"])        

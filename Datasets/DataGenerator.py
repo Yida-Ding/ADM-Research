@@ -42,6 +42,7 @@ class CrewHelper:
                 if lastFlight[4]!=tail or sum([cf[3]-cf[2] for cf in self.crewFlights[c]])<self.D.config["CREWMAXREPTIME"]:
                     self.crewFlights[c].append((origin,destination,depTime,arrTime,tail))
                     return c
+                
         # No crew found, create a new one
         crewname="C%02d"%len(self.crewFlights)
         self.crewFlights[crewname]=[(origin,destination,depTime,arrTime,tail)]
@@ -57,25 +58,25 @@ class ItineraryHelper:
         leaveall=0
         for it in self.itinFlights.copy():
             lastFlight=self.itinFlights[it][-1]
-            if lastFlight[2]==origin and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime:
-                if destination not in [flight[1] for flight in self.itinFlights[it]]: # make sure the new flight added to itin will not return back to the previous origins
-                    if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]:
-                        leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
-                        if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
-                            newItin="I%02d"%len(self.itinFlights)
-                            self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
-                            self.itinPax[it]-=leave
-                            self.itinPax[newItin]=leave
-                            leaveall+=leave
-                        
-                    elif len(self.itinFlights[it])>=2 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]+self.D.config["TWOHOPITINPROB"]:
-                        leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
-                        if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
-                            newItin="I%02d"%len(self.itinFlights)
-                            self.itinFlights[newItin]=self.itinFlights[it]+[(fltname,origin,destination,depTime,arrTime,pax)]
-                            self.itinPax[it]-=leave
-                            self.itinPax[newItin]=leave
-                            leaveall+=leave
+            # make sure the new flight added to itin will not return back to the previous origins
+            if lastFlight[2]==origin and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime and destination not in [flight[1] for flight in self.itinFlights[it]]:
+                if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]:
+                    leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
+                    if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
+                        newItin="I%02d"%len(self.itinFlights)
+                        self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
+                        self.itinPax[it]-=leave
+                        self.itinPax[newItin]=leave
+                        leaveall+=leave
+                    
+                elif len(self.itinFlights[it])>=2 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]+self.D.config["TWOHOPITINPROB"]:
+                    leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
+                    if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
+                        newItin="I%02d"%len(self.itinFlights)
+                        self.itinFlights[newItin]=self.itinFlights[it]+[(fltname,origin,destination,depTime,arrTime,pax)]
+                        self.itinPax[it]-=leave
+                        self.itinPax[newItin]=leave
+                        leaveall+=leave
                         
         itin="I%02d"%len(self.itinFlights)
         self.itinFlights[itin]=[(fltname,origin,destination,depTime,arrTime,pax)]
@@ -104,12 +105,13 @@ def generateDataset(direname,config):
                 origin=olddestination
                 depTime=oldarrTime+D.config["ACMINCONTIME"]+int(random.uniform(0.0,1.0)*(D.config["ACMAXCONTIME"]-D.config["ACMINCONTIME"]))
     
-            if random.uniform(0.0,1.0)<0.3 and len(flights)>=1: #TODO: this needs to be better parameterized in the future! In general, some constant in the range 0.0 (=hub and spoke) and 1.0 (=point-to-point) would be nice.
+            if random.uniform(0.0,1.0)<0.3 and len(flights)>=1: # In general, some constant in the range 0.0 (=hub and spoke) and 1.0 (=point-to-point) would be nice.
                 #return to old origin
                 destination=flights[-1][1]
             else:
                 neighbors=list(D.Gconnectable.neighbors(origin))
                 destination=random.choices(population=neighbors,weights=[D.ap2pax[k] for k in neighbors],k=1)[0]
+                
             distance=int(D.appair2distance[(origin,destination)])
             flightTime=int(distance/D.config["ACTAVGSPEED"])
             cruiseTime=max(flightTime-30*60,0)
@@ -118,7 +120,7 @@ def generateDataset(direname,config):
                 break
             fltname="F%02d"%flightind
             flightind+=1
-            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)//config["PAXSCALE"] # TODO: For simplicity
+            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
             itin=itinHelper.getAvailableItinerary(fltname,origin,destination,depTime,arrTime,pax)
             flights+=[(fltname,origin,destination,depTime,arrTime,cruiseTime,crew,distance,pax)]
@@ -139,7 +141,7 @@ def generateDataset(direname,config):
             resd["Flight_time"].append(flight[4]-flight[3])
             resd["Cruise_time"].append(flight[5])
             resd["Distance"].append(flight[7])
-            resd["Capacity"].append(accap//config["PAXSCALE"]) # TODO: For simplicity
+            resd["Capacity"].append(accap)
             resd["Pax"].append(flight[8])
             resd["Timestring"].append(D.getTimeString(flight[3])+" -> "+D.getTimeString(flight[4]))
     

@@ -33,7 +33,7 @@ class Scenario:
             self.entity2delayTime=json.load(outfile)
                 
         #Create FNodes
-        self.flight2dict={dic['Flight']:dic for dic in self.dfdrpschedule.to_dict(orient='record')}
+        self.flight2dict={dic['Flight']:dic for dic in self.dfdrpschedule.to_dict(orient='records')}
         self.type2mincontime={"ACF":self.config["ACMINCONTIME"],"CRW":self.config["CREWMINCONTIME"],"PAX":self.config["PAXMINCONTIME"],"ITIN":self.config["PAXMINCONTIME"]}
         self.FNodes=[Node(self,ntype="FNode",name=flight) for flight in self.dfdrpschedule["Flight"].tolist()]
             

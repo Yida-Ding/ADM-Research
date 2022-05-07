@@ -79,6 +79,11 @@ def mainModelExecutor(dataset,scenario):
           }
     
     executeModel(dataset,scenario,mode)
-         
+    
+    
+if __name__ == '__main__':
+    mainModelExecutor("ACF5","ACF5-SC1")
+        
+
 
 

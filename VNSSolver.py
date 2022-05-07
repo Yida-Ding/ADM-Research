@@ -129,43 +129,52 @@ class VNSSolver:
                 else:
                     curArrTime=timeDict[flt][1]
         
+        # the delay of itin is the actual arrival time of itin minus the schedule arrival time of itin
         itinDelay=[(itin,timeDict[self.S.itin2flights[itin][-1]][1]-self.S.itin2skdtime[itin][1]) for itin in self.S.itin2flights.keys()]
         itinDelay=sorted(itinDelay,key=lambda xx:xx[1],reverse=True)
         itin2pax=self.S.itin2pax.copy()
         bothItin2pax=defaultdict(int); itin2flowin=defaultdict(int)
-        for itin1,delay1 in itinDelay:
+        for itin1, delay1 in itinDelay:
             # Case1: not rerouted
-            minCost=self.S.config["DELAYCOST"]*itin2pax[itin1]*delay1
-            minflt2=None            
+            minCost = self.S.config["DELAYCOST"]*itin2pax[itin1]*delay1
+            minflt2 = None            
             
-            flts1=self.S.itin2flights[itin1]
+            flts1 = self.S.itin2flights[itin1]
             for flt2 in self.flts:
-                if self.S.itin2origin[itin1]==self.node[flt2].Ori and self.S.itin2destination[itin1]==self.node[flt2].Des and timeDict[flt2][1]<timeDict[flts1[-1]][1]:# arrive earlier than current
-                    paxFlt2=sum([itin2pax[itin] for itin in self.S.flt2skditins[flt2]])
-                    remain2=self.tail2cap[flt2tail[flt2]]-paxFlt2
-                    leave=min(remain2,itin2pax[itin1])
-                    remain1=itin2pax[itin1]-leave                    
-                    # Case2: reroute with a late flight
-                    if timeDict[flt2][0]>self.S.itin2skdtime[itin1][0]: # depart later than schedule, then arrive must later than schedule 
-                        timeFlt2=[timeDict[flt2][0],timeDict[flt2][1]]
-                        cost=self.S.config["DELAYCOST"]*leave*(timeDict[flt2][1]-self.S.itin2skdtime[itin1][1])+self.S.config["DELAYCOST"]*remain1*delay1                    
-                    # Case3: reroute with an early flight
-                    else: # depart earlier than schedule, change the time of flight2 to schedule
-                        timeFlt2=[self.S.itin2skdtime[itin1][0],self.S.itin2skdtime[itin1][0]+self.node[flt2].SFT]
-                        cost=self.S.config["DELAYCOST"]*remain1*delay1+self.S.config["DELAYCOST"]*paxFlt2*(timeFlt2[1]-self.node[flt2].ScheduleAT)                        
-                    if cost<minCost:
-                        minCost=cost
-                        minflt2=flt2
-                        minTimeFlt2=timeFlt2
-                        minLeave=leave
+                # condition for replaceable flt2: current arrival time of flt2 should be earlier than current arrival time of itin1
+                if self.S.itin2origin[itin1] == self.node[flt2].Ori and self.S.itin2destination[itin1] == self.node[flt2].Des and timeDict[flt2][1] < timeDict[flts1[-1]][1]:
+                    paxFlt2 = sum([itin2pax[itin] for itin in self.S.flt2skditins[flt2]])
+                    remain2 = self.tail2cap[flt2tail[flt2]]-paxFlt2
+                    leave = min(remain2,itin2pax[itin1])
+                    remain1 = itin2pax[itin1]-leave                    
+                    # Case2: reroute with a late-depart flight. The replaceable flt2 has later departure time than the schedule departure time of itin1, so the leave in itin1 can be sure to catch the flt2, but they will experience arrival delay than schedule 
+                    if timeDict[flt2][0] > self.S.itin2skdtime[itin1][0]:
+                        # the timing of flt2 remains unchanged
+                        timeFlt2 = [timeDict[flt2][0],timeDict[flt2][1]] 
+                        # sign operation: if positive keep it, if negative set it to 0
+                        cost = self.S.config["DELAYCOST"]*leave*max(timeFlt2[1]-self.S.itin2skdtime[itin1][1],0) \ 
+                             + self.S.config["DELAYCOST"]*remain1*delay1
+                    # Case3: reroute with an early flight: # The replaceable flt2 has earlier departure time than the schedule departure time of itin1, so we need to change the time of flight2 to schedule departure time of itin1
+                    else: 
+                        # the timing of flt2 is aligned to the schedule departure time of itin1
+                        timeFlt2 = [self.S.itin2skdtime[itin1][0],self.S.itin2skdtime[itin1][0]+self.node[flt2].SFT] 
+                        cost = self.S.config["DELAYCOST"]*remain1*delay1 \
+                             + self.S.config["DELAYCOST"]*paxFlt2*max(timeFlt2[1]-self.node[flt2].ScheduleAT,0) \
+                             + self.S.config["DELAYCOST"]*leave*max(timeFlt2[1]-self.S.itin2skdtime[itin1][1],0)
+                             
+                    if cost < minCost:
+                        minCost = cost
+                        minflt2 = flt2
+                        minTimeFlt2 = timeFlt2
+                        minLeave = leave
                             
-            if minflt2!=None:
-                itin2=self.S.fltlegs2itin[minflt2]
-                timeDict[minflt2]=minTimeFlt2
-                itin2flowin[itin2]+=minLeave
-                itin2pax[itin1]-=minLeave
-                itin2pax[itin2]+=minLeave
-                bothItin2pax[(itin2,itin1)]=minLeave
+            if minflt2 != None:
+                itin2 = self.S.fltlegs2itin[minflt2]
+                timeDict[minflt2] = minTimeFlt2
+                itin2flowin[itin2] += minLeave
+                itin2pax[itin1] -= minLeave
+                itin2pax[itin2] += minLeave
+                bothItin2pax[(itin2,itin1)] = minLeave
             
             # feasibility check for itin1: check conflict or unconnected flights 
             if itin2pax[itin1]>0:

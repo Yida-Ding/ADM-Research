@@ -42,10 +42,9 @@ def runMain(dataset):
             else:
                 seed+=1
 
-
 if __name__ == '__main__':
-    #main("ACF5","ACF5-SC2",48)
-    runCPLEX("ACF5","ACF5-SC2")
+    runCPLEX("ACF5","ACF5-SC1")
+    print("latest version")
         
 
 
