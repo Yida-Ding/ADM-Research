@@ -1,7 +1,6 @@
 import pandas as pd
 import networkx as nx
 import json
-import cplex
 from collections import defaultdict
 from lxml import etree
 from NetworkGenerator import Scenario
@@ -249,7 +248,7 @@ if __name__=="__main__":
     
     for size in range(5,35,5):
         for typ in ["m","p"]:
-            if size==25 and typ=="p":
+            if size==25:
                 continue
             ana=Analyzer("ACF%d"%size,"ACF%d-SC%s"%(size,typ),"Mode1")
             ana.parseOutputData()
