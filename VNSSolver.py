@@ -120,14 +120,14 @@ class VNSSolver:
                 timeDict[flt][0]=max(timeDict[flt][0],fatherAt+self.S.config["CREWMINCONTIME"])
                 timeDict[flt][1]=timeDict[flt][0]+self.node[flt].SFT
                 
-        # feasibility check for crews: check conflict/unconnected flights based on current timeDict and Qs
-        for Q in Qs:
-            curArrTime=self.S.config["STARTTIME"]
-            for flt in Q[1:-1]:
-                if curArrTime+self.node[flt].CT>timeDict[flt][0]:
-                    return np.inf,None,None,None
-                else:
-                    curArrTime=timeDict[flt][1]
+#        # feasibility check for crews: check conflict/unconnected flights based on current timeDict and Qs
+#        for Q in Qs:
+#            curArrTime=self.S.config["STARTTIME"]
+#            for flt in Q[1:-1]:
+#                if curArrTime+self.node[flt].CT>timeDict[flt][0]:
+#                    return np.inf,None,None,None
+#                else:
+#                    curArrTime=timeDict[flt][1]
         
         # the delay of itin is the actual arrival time of itin minus the schedule arrival time of itin
         itinDelay=[(itin,timeDict[self.S.itin2flights[itin][-1]][1]-self.S.itin2skdtime[itin][1]) for itin in self.S.itin2flights.keys()]
@@ -152,7 +152,7 @@ class VNSSolver:
                         # the timing of flt2 remains unchanged
                         timeFlt2 = [timeDict[flt2][0],timeDict[flt2][1]] 
                         # sign operation: if positive keep it, if negative set it to 0
-                        cost = self.S.config["DELAYCOST"]*leave*max(timeFlt2[1]-self.S.itin2skdtime[itin1][1],0) \ 
+                        cost = self.S.config["DELAYCOST"]*leave*max(timeFlt2[1]-self.S.itin2skdtime[itin1][1],0) \
                              + self.S.config["DELAYCOST"]*remain1*delay1
                     # Case3: reroute with an early flight: # The replaceable flt2 has earlier departure time than the schedule departure time of itin1, so we need to change the time of flight2 to schedule departure time of itin1
                     else: 
@@ -345,47 +345,54 @@ class VNSSolver:
 def runVNSWithEnumSaveSolution(config):
     S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
     solver=VNSSolver(S,0,config["BASELINE"],config["ENUMFLAG"])
-    solver.generateVNSRecoveryPlan(*solver.VNS(config["TRAJLEN"]))
+    res=solver.VNS(config["TRAJLEN"])
+    print(res[2][0])
+#    solver.generateVNSRecoveryPlan(*solver.VNS(config["TRAJLEN"]))
     
 def runVNS(config):
     res=[]
+    times=[]
     S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
     for seed in range(config["EPISODES"]):
+        T1=time.time()
         solver=VNSSolver(S,seed,config["BASELINE"],config["ENUMFLAG"])
         objective=solver.VNS(config["TRAJLEN"])[2][0]
+        T2=time.time()
         res.append(objective)
+        times.append(T2-T1)
         print('episode: {:>3}'.format(seed), ' objective: {:>6.1f} '.format(objective))
 
     np.savez_compressed('Results/%s/res_%s'%(config["SCENARIO"],config["BASELINE"]),res=res)
+    np.savez_compressed('Results/%s/time_%s'%(config["SCENARIO"],config["BASELINE"]),res=times)
 
 if __name__ == '__main__':
     
-#    config={"DATASET":"ACF5",
-#            "SCENARIO":"ACF5-SC1",
+#    config={"DATASET":"ACF25",
+#            "SCENARIO":"ACF25-SCp",
 #            "BASELINE":"uniform", # degree/uniform/distance
-#            "TRAJLEN":100,
+#            "TRAJLEN":10,
 #            "ENUMFLAG":True,
 #            "EPISODES":1
 #            }
 #    runVNSWithEnumSaveSolution(config)
-    
-    for base in ["uniform","degree","distance"]:
         
-        config={"DATASET": "ACF7",
-                "SCENARIO": "ACF7-SC1",
-                "BASELINE": base, # degree/uniform/distance
-                "TRAJLEN": 5,
-                "ENUMFLAG": False,
-                "EPISODES": 2500
-                }
+    for i in range(5,35,5):
+        for typ in ['m','p']:
+            for base in ["uniform","degree","distance"]:
+                
+                config={"DATASET": "ACF%d"%i,
+                        "SCENARIO": "ACF%d-SC%s"%(i,typ),
+                        "BASELINE": base, # degree/uniform/distance
+                        "TRAJLEN": 10,
+                        "ENUMFLAG": False,
+                        "EPISODES": 5000
+                        }
+                
+                runVNS(config)
+                print(base,"finished")
         
-        runVNS(config)
-        print(base,"finished")
         
-        
-        
-        
-        
+                
         
         
     
