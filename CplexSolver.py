@@ -11,13 +11,13 @@ def createScenario(dataset,scenario,k,seed=0):
     SC.setFlightDepartureDelay(delayinfo)
     SC.setDelayedReadyTime({})
 
-def main(dataset,scenario,k,seed=0):
+def main(dataset,scenario,k,mode,seed=0):
     SC=ScenarioGenerator(dataset,scenario,seed)
     delayinfo=SC.getRandomFlightDelay(k)
     SC.setFlightDepartureDelay(delayinfo)
     SC.setDelayedReadyTime({})
     try:
-        mainModelExecutor(dataset,scenario)
+        mainModelExecutor(dataset,scenario,mode)
         mainResultAnalyzer(dataset,scenario)
     except: # cplex no solution error
         shutil.rmtree("Scenarios/"+scenario)
@@ -25,40 +25,46 @@ def main(dataset,scenario,k,seed=0):
         return False
     return True
 
-def mainWithoutExcept(dataset,scenario,seed=0):
-    SC=ScenarioGenerator(dataset,scenario,seed)
-    delayinfo=SC.getRandomFlightDelay(2)
-    SC.setFlightDepartureDelay(delayinfo)
-    SC.setDelayedReadyTime({})
-    mainModelExecutor(dataset,scenario)
-    mainResultAnalyzer(dataset,scenario)
+def runCPLEX(dataset,scenario,mode):
+    try:
+        mainModelExecutor(dataset,scenario,mode)
+        mainResultAnalyzer(dataset,scenario)
+    except: # cplex no solution error
+        shutil.rmtree("Results/"+scenario)
+        return False
+    return True
 
-def runCPLEX(dataset,scenario):
-    mainModelExecutor(dataset,scenario)
-    mainResultAnalyzer(dataset,scenario)
-
-def runMain(dataset):
-    seed=0
-    for i in range(5):
-        while True:
-            flag=main(dataset,dataset+"-SC%d"%i,seed)
-            if flag:
-                seed+=1
-                break
-            else:
-                seed+=1
 
 if __name__ == '__main__':
-    seedL=[[7,0],[0,7],[1,6],[1,2],[9,18],[2,58]]
-    i=0
-    for size in range(5,35,5):
-        createScenario("ACF%d"%size,"ACF%d-SCm"%size,0.1,seedL[i][0])
-        createScenario("ACF%d"%size,"ACF%d-SCp"%size,0.3,seedL[i][1])
-        i+=1
     
-#    main("ACF30","ACF30-SCp",0.3,58)
-#    createScenario("ACF5","ACF5-SCm",0.1,7)
-#    runCPLEX("ACF5","ACF5-SCm")
+    mode={"MODEID":"Mode1",     # the directory name of mode setting
+          "PAXTYPE":"PAX",      # (ITIN/PAX) aggregate the passengers of the same itinarery as an entity, or leave the passengers as individual entities
+          "DELAYTYPE":"actual", # (approx/actual) calculate the delay cost by approximation method regarding the delay of flight (section 3.10.1), or by actual method regarding delay of passenger (section 3.10.3); Note that the combination ("ITIN","actual") is not allowed
+          "CRSTIMECOMP":0,      # (0/1) allowed to compress the cruise time (1) or not (0) 
+          "BOUNDETYPES":{
+              "ACF":0,
+              "CRW":0,
+              "ITIN":0,
+              "PAX":0   },      # (0/1) bound the size of partial network of each entity type (1) or not (0)
+          "SIZEBOUND":1000,       # the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
+          "MIPTOLERANCE":0.,  # the relative mip tolerance of optimality gap
+          "TIMELIMIT":1000,      # the limit of duration in seconds for cplex computation
+          }
+          
+    size=25
+    runCPLEX("ACF%d"%size,"ACF%d-SCp"%size,mode)
+    
+#    for size in range(5,35,5):
+#        runCPLEX("ACF%d"%size,"ACF%d-SCm"%size,mode)
+#        runCPLEX("ACF%d"%size,"ACF%d-SCp"%size,mode)
+#
+#    main("ACF25","ACF25-SCp",0.3,mode,0)
+#    createScenario("ACF25","ACF25-SCp",0.3,0)
+          
+         
+
+
+
 
 
 

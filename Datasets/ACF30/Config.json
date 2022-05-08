@@ -1,6 +1,6 @@
 {
     "MAXAC": 30,
-    "MAXAPT": 30,
+    "MAXAPT": 29,
     "MAXACT": 3,
     "LOADFACTOR": 0.8,
     "MINFLIGHTDISTANCE": 600,

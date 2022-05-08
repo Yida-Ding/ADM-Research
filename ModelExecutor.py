@@ -63,21 +63,7 @@ def executeModel(dataset,scenario,mode):
     print("Gap:",gap," prepareTime:",T2-T1," cplexTime",T3-T2)
 
 
-def mainModelExecutor(dataset,scenario):
-    mode={"MODEID":"Mode1",     # the directory name of mode setting
-          "PAXTYPE":"PAX",      # (ITIN/PAX) aggregate the passengers of the same itinarery as an entity, or leave the passengers as individual entities
-          "DELAYTYPE":"actual", # (approx/actual) calculate the delay cost by approximation method regarding the delay of flight (section 3.10.1), or by actual method regarding delay of passenger (section 3.10.3); Note that the combination ("ITIN","actual") is not allowed
-          "CRSTIMECOMP":0,      # (0/1) allowed to compress the cruise time (1) or not (0) 
-          "BOUNDETYPES":{
-              "ACF":0,
-              "CRW":0,
-              "ITIN":0,
-              "PAX":0   },      # (0/1) bound the size of partial network of each entity type (1) or not (0)
-          "SIZEBOUND":1000,       # the upper bound of the number of arcs in the partial network according to PSCA algorithm, which is intended to control the size of partial network
-          "MIPTOLERANCE":0.05,  # the relative mip tolerance of optimality gap
-          "TIMELIMIT":600,      # the limit of duration in seconds for cplex computation
-          }
-    
+def mainModelExecutor(dataset,scenario,mode):
     executeModel(dataset,scenario,mode)
         
 

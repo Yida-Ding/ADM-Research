@@ -182,9 +182,31 @@ class Analyzer:
         print(pd.DataFrame({term:["%.1f"%cost] for term,cost in costDict.items()}))
         
     def getRunTimeAndGap(self):
-        runtime=self.variable2value["runtime"]
+        runtime=self.variable2value["cplexTime"]
         gap=self.variable2value["optimalityGap"]
         return runtime,gap
+    
+    
+class DatasetScenarioSummarizer:
+    def __init__(self,dataset,scenario):
+        self.dataset=dataset
+        self.scenario=scenario
+        #load from Dataset
+        with open("Datasets/"+dataset+"/Config.json", "r") as outfile:
+            self.config=json.load(outfile)
+        self.dfschedule=pd.read_csv("Datasets/"+dataset+"/Schedule.csv",na_filter=None)
+        self.dfitinerary=pd.read_csv("Datasets/"+dataset+"/Itinerary.csv",na_filter=None)
+        self.flight2scheduleAT={row.Flight:row.SAT for row in self.dfschedule.itertuples()}
+        self.flight2scheduleDT={row.Flight:row.SDT for row in self.dfschedule.itertuples()}
+        self.airports=set(self.dfschedule["From"])|set(self.dfschedule["To"])
+        
+        #load from Scenario
+        self.dfdrpschedule=pd.read_csv("Scenarios/"+scenario+"/DrpSchedule.csv",na_filter=None)
+        self.disruptedFlights=self.dfdrpschedule[self.dfdrpschedule["is_disrupted"]==1]["Flight"].tolist()
+        self.flight2drpAT={row.Flight:row.SAT for row in self.dfdrpschedule.itertuples()}
+        self.flight2drpDT={row.Flight:row.SDT for row in self.dfdrpschedule.itertuples()}
+    
+
     
 def mainResultAnalyzer(dataset,scenario,mode="Mode1"):
     analyzer=Analyzer(dataset,scenario,mode)
@@ -192,8 +214,52 @@ def mainResultAnalyzer(dataset,scenario,mode="Mode1"):
     analyzer.generateRecoveryPlan()
     analyzer.displayScheduleAndRecovery()
     analyzer.getReroutingActions()
+    analyzer.getRunTimeAndGap()
     analyzer.getCostTerms()
     
+    
+def getDatasetSummary(dataset):
+    dfschedule=pd.read_csv("Datasets/"+dataset+"/Schedule.csv",na_filter=None)
+    flights=dfschedule["Flight"].to_list()
+    tails=set(list(dfschedule["Tail"]))
+    crews=set(list(dfschedule["Crew"]))
+    dfitinerary=pd.read_csv("Datasets/"+dataset+"/Itinerary.csv",na_filter=None)
+    paxs=dfitinerary["Pax"].to_list()
+    flight2scheduleAT={row.Flight:row.SAT for row in dfschedule.itertuples()}
+    flight2scheduleDT={row.Flight:row.SDT for row in dfschedule.itertuples()}
+    airports=set(dfschedule["From"])|set(dfschedule["To"])
+    return len(flights),len(airports),len(tails),len(crews),len(paxs),sum(paxs)
+    
+def getScenarioSummary(dataset,scenario):
+    dfschedule=pd.read_csv("Datasets/"+dataset+"/Schedule.csv",na_filter=None)
+    flight2scheduleDT={row.Flight:row.SDT for row in dfschedule.itertuples()}
+    dfdrpschedule=pd.read_csv("Scenarios/"+scenario+"/DrpSchedule.csv",na_filter=None)
+    disruptedFlights=dfdrpschedule[dfdrpschedule["is_disrupted"]==1]["Flight"].tolist()
+    flight2drpDT={row.Flight:row.SDT for row in dfdrpschedule.itertuples()}
+    count1,count2=0,0
+    for flight in disruptedFlights:
+        delay=flight2drpDT[flight]-flight2scheduleDT[flight]
+        if delay<=2*3600:
+            count1+=1
+        else:
+            count2+=1
+    return count1,count2,len(disruptedFlights)
+
+if __name__=="__main__":
+    
+    for size in range(5,35,5):
+        for typ in ["m","p"]:
+            if size==25 and typ=="p":
+                continue
+            ana=Analyzer("ACF%d"%size,"ACF%d-SC%s"%(size,typ),"Mode1")
+            ana.parseOutputData()
+            res=ana.getRunTimeAndGap()
+            print(res)
+
+#    res=getDatasetSummary("ACF30")
+#    res=getScenarioSummary("ACF30","ACF30-SCp")
+#    print(res)
+
 
 
 
