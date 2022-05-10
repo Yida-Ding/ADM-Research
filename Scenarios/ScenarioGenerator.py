@@ -52,9 +52,9 @@ class ScenarioGenerator:
         selflights=random.sample(self.D.flights,int(k*len(self.D.flights)))
         flight2hour={flight:random.uniform(0,4) for flight in selflights}
         return {flight:hour*3600 for flight,hour in flight2hour.items()}
-    
-    
-    
-    
+
+
+
+        
 
         

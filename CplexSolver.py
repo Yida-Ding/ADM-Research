@@ -49,19 +49,13 @@ def runMain(dataset):
                 seed+=1
 
 if __name__ == '__main__':
-#    seedL=[[7,0],[0,7],[1,6],[1,2],[9,18],[2,58]]
-#    i=0
-#    for size in range(5,35,5):
-#        createScenario("ACF%d"%size,"ACF%d-SCm"%size,0.1,seedL[i][0])
-#        createScenario("ACF%d"%size,"ACF%d-SCp"%size,0.3,seedL[i][1])
-#        i+=1
     
-#    main("ACF25","ACF25-SCp",0.3,51)
-#    createScenario("ACF25","ACF25-SCp",0.3,51)
-    runCPLEX("ACF25","ACF25-SCm")
-    runCPLEX("ACF25","ACF25-SCp")
-    
-
+    for i in range(100,400,50):
+        for typ in ["m","p"]:
+            if typ=='m':
+                createScenario("ACF%d"%i,"ACF%d-SC%s"%(i,typ),0.1,0)
+            else:
+                createScenario("ACF%d"%i,"ACF%d-SC%s"%(i,typ),0.3,0)
 
 
 

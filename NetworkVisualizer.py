@@ -102,7 +102,7 @@ class Visualizer:
         
 if __name__ == '__main__':
     
-    for i in range(5,35,5):
+    for i in range(5,20,5):
         for typ in ['m','p']:
 
             V=Visualizer("ACF%d"%i,"ACF%d-SC%s"%(i,typ))

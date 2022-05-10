@@ -113,12 +113,12 @@ class VNSSolver:
                     timeDict[P[i]][0]=max(timeDict[P[i-1]][1]+self.S.config["ACMINCONTIME"],self.node[P[i]].SDT)
                     timeDict[P[i]][1]=timeDict[P[i]][0]+self.node[P[i]].SFT
         
-        # repair timeDict based on the structure of Qs
-        for flt,father in flt2father.items():
-            if father!=None:
-                fatherAt=timeDict[father][1]
-                timeDict[flt][0]=max(timeDict[flt][0],fatherAt+self.S.config["CREWMINCONTIME"])
-                timeDict[flt][1]=timeDict[flt][0]+self.node[flt].SFT
+#        # repair timeDict based on the structure of Qs
+#        for flt,father in flt2father.items():
+#            if father!=None:
+#                fatherAt=timeDict[father][1]
+#                timeDict[flt][0]=max(timeDict[flt][0],fatherAt+self.S.config["CREWMINCONTIME"])
+#                timeDict[flt][1]=timeDict[flt][0]+self.node[flt].SFT
                 
 #        # feasibility check for crews: check conflict/unconnected flights based on current timeDict and Qs
 #        for Q in Qs:
@@ -176,14 +176,14 @@ class VNSSolver:
                 itin2pax[itin2] += minLeave
                 bothItin2pax[(itin2,itin1)] = minLeave
             
-            # feasibility check for itin1: check conflict or unconnected flights 
-            if itin2pax[itin1]>0:
-                curAt=self.S.config["STARTTIME"]
-                for flt in flts1:
-                    if curAt+self.node[flt].CT>timeDict[flt][0]:
-                        return np.inf,None,None,None
-                    else:
-                        curAt=timeDict[flt][1]
+#            # feasibility check for itin1: check conflict or unconnected flights 
+#            if itin2pax[itin1]>0:
+#                curAt=self.S.config["STARTTIME"]
+#                for flt in flts1:
+#                    if curAt+self.node[flt].CT>timeDict[flt][0]:
+#                        return np.inf,None,None,None
+#                    else:
+#                        curAt=timeDict[flt][1]
                 
             bothItin2pax[(itin1,itin1)]=itin2pax[itin1]-itin2flowin.get(itin1,0)
         
@@ -193,10 +193,10 @@ class VNSSolver:
             for flt in self.S.itin2flights[recItin]:
                 paxDict[flt]+=pax         
                 
-        # feasibility check for tail capacity
-        for flt,tail in flt2tail.items():
-            if paxDict[flt]>self.tail2cap[tail]:
-                return np.inf,None,None,None
+#        # feasibility check for tail capacity
+#        for flt,tail in flt2tail.items():
+#            if paxDict[flt]>self.tail2cap[tail]:
+#                return np.inf,None,None,None
         
         # compute delay cost
         delayCost=0
@@ -347,7 +347,7 @@ def runVNSWithEnumSaveSolution(config):
     solver=VNSSolver(S,0,config["BASELINE"],config["ENUMFLAG"])
     res=solver.VNS(config["TRAJLEN"])
     print(res[2][0])
-#    solver.generateVNSRecoveryPlan(*solver.VNS(config["TRAJLEN"]))
+#    solver.generateVNSRecoveryPlan(*res)
     
 def runVNS(config):
     res=[]
@@ -360,39 +360,27 @@ def runVNS(config):
         T2=time.time()
         res.append(objective)
         times.append(T2-T1)
-        print('episode: {:>3}'.format(seed), ' objective: {:>6.1f} '.format(objective))
+        print(config["SCENARIO"],'episode: {:>3}'.format(seed), ' objective: {:>6.1f} '.format(objective),'best:',"%.1f"%min(res))
 
     np.savez_compressed('Results/%s/res_%s'%(config["SCENARIO"],config["BASELINE"]),res=res)
     np.savez_compressed('Results/%s/time_%s'%(config["SCENARIO"],config["BASELINE"]),res=times)
 
 if __name__ == '__main__':
-    
-#    config={"DATASET":"ACF25",
-#            "SCENARIO":"ACF25-SCp",
-#            "BASELINE":"uniform", # degree/uniform/distance
-#            "TRAJLEN":10,
-#            "ENUMFLAG":True,
-#            "EPISODES":1
-#            }
-#    runVNSWithEnumSaveSolution(config)
-        
-    for i in range(5,35,5):
-        for typ in ['m','p']:
-            for base in ["uniform","degree","distance"]:
-                
+
+    for i in range(100,350,50):
+        for typ in ["m","p"]:
+            for m in ["degree","uniform","distance"]:
+
                 config={"DATASET": "ACF%d"%i,
                         "SCENARIO": "ACF%d-SC%s"%(i,typ),
-                        "BASELINE": base, # degree/uniform/distance
-                        "TRAJLEN": 10,
+                        "BASELINE": m, # degree/uniform/distance
+                        "TRAJLEN": 5,
                         "ENUMFLAG": False,
-                        "EPISODES": 5000
+                        "EPISODES": 100
                         }
                 
                 runVNS(config)
-                print(base,"finished")
-        
-        
-                
-        
+            
+
         
     
