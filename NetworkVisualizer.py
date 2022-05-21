@@ -102,7 +102,7 @@ class Visualizer:
         
 if __name__ == '__main__':
     
-    for i in range(5,35,5):
+    for i in range(5,20,5):
         for typ in ['m','p']:
 
             V=Visualizer("ACF%d"%i,"ACF%d-SC%s"%(i,typ))
@@ -110,10 +110,10 @@ if __name__ == '__main__':
             V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
             V.plotFlightNetwork(*V.getRecoveryData("VNS"))
     
-#    V=Visualizer("ACF5","ACF5-SCm")
-#    V.plotFlightNetwork(*V.getScheduleData())
-#    V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
-#    V.plotFlightNetwork(*V.getRecoveryData("VNS"))
+    V=Visualizer("ACF5","ACF5-SCm")
+    V.plotFlightNetwork(*V.getScheduleData())
+    V.plotFlightNetwork(*V.getRecoveryData("CPLEX"))
+    V.plotFlightNetwork(*V.getRecoveryData("VNS"))
 
     
 

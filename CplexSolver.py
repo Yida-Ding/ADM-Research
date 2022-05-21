@@ -4,6 +4,7 @@ import pandas as pd
 from Scenarios.ScenarioGenerator import ScenarioGenerator
 from ModelExecutor import mainModelExecutor
 from ResultAnalyzer import mainResultAnalyzer
+import random
 
 def createScenario(dataset,scenario,k,seed=0):
     SC=ScenarioGenerator(dataset,scenario,seed)
@@ -37,30 +38,9 @@ def runCPLEX(dataset,scenario):
     mainModelExecutor(dataset,scenario)
     mainResultAnalyzer(dataset,scenario)
 
-def runMain(dataset):
-    seed=0
-    for i in range(5):
-        while True:
-            flag=main(dataset,dataset+"-SC%d"%i,seed)
-            if flag:
-                seed+=1
-                break
-            else:
-                seed+=1
 
 if __name__ == '__main__':
-#    seedL=[[7,0],[0,7],[1,6],[1,2],[9,18],[2,58]]
-#    i=0
-#    for size in range(5,35,5):
-#        createScenario("ACF%d"%size,"ACF%d-SCm"%size,0.1,seedL[i][0])
-#        createScenario("ACF%d"%size,"ACF%d-SCp"%size,0.3,seedL[i][1])
-#        i+=1
-    
-#    main("ACF25","ACF25-SCp",0.3,51)
-#    createScenario("ACF25","ACF25-SCp",0.3,51)
-    runCPLEX("ACF25","ACF25-SCm")
-    runCPLEX("ACF25","ACF25-SCp")
-    
+    main("ACF30","ACF30-SC0",0.1,20)
 
 
 

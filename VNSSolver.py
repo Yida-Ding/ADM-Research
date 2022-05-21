@@ -9,6 +9,8 @@ import copy
 import json
 import networkx as nx
 from NetworkGenerator import Scenario
+import multiprocessing
+import os
 
 class VNSSolver:
     def __init__(self,S,seed,baseline="distance",enumFlag=False):
@@ -120,14 +122,14 @@ class VNSSolver:
                 timeDict[flt][0]=max(timeDict[flt][0],fatherAt+self.S.config["CREWMINCONTIME"])
                 timeDict[flt][1]=timeDict[flt][0]+self.node[flt].SFT
                 
-#        # feasibility check for crews: check conflict/unconnected flights based on current timeDict and Qs
-#        for Q in Qs:
-#            curArrTime=self.S.config["STARTTIME"]
-#            for flt in Q[1:-1]:
-#                if curArrTime+self.node[flt].CT>timeDict[flt][0]:
-#                    return np.inf,None,None,None
-#                else:
-#                    curArrTime=timeDict[flt][1]
+        # feasibility check for crews: check conflict/unconnected flights based on current timeDict and Qs
+        for Q in Qs:
+            curArrTime=self.S.config["STARTTIME"]
+            for flt in Q[1:-1]:
+                if curArrTime+self.node[flt].CT>timeDict[flt][0]:
+                    return np.inf,None,None,None
+                else:
+                    curArrTime=timeDict[flt][1]
         
         # the delay of itin is the actual arrival time of itin minus the schedule arrival time of itin
         itinDelay=[(itin,timeDict[self.S.itin2flights[itin][-1]][1]-self.S.itin2skdtime[itin][1]) for itin in self.S.itin2flights.keys()]
@@ -347,9 +349,23 @@ def runVNSWithEnumSaveSolution(config):
     solver=VNSSolver(S,0,config["BASELINE"],config["ENUMFLAG"])
     res=solver.VNS(config["TRAJLEN"])
     print(res[2][0])
-#    solver.generateVNSRecoveryPlan(*solver.VNS(config["TRAJLEN"]))
+    solver.generateVNSRecoveryPlan(*res)
     
-def runVNS(config):
+def runVNS(par):
+    
+    config={"DATASET": "ACF%d"%par[0],
+            "SCENARIO": "ACF%d-SC%d"%(par[0],par[1]),
+            "BASELINE": par[2],
+            "TRAJLEN": 10,
+            "ENUMFLAG": False,
+            "EPISODES": 100
+            }
+    
+    if not os.path.exists("Results"):
+        os.makedirs("Results")
+    if not os.path.exists("Results/%s"%config["SCENARIO"]):
+        os.makedirs("Results/%s"%config["SCENARIO"])
+        
     res=[]
     times=[]
     S=Scenario(config["DATASET"],config["SCENARIO"],"PAX")
@@ -360,39 +376,18 @@ def runVNS(config):
         T2=time.time()
         res.append(objective)
         times.append(T2-T1)
-        print('episode: {:>3}'.format(seed), ' objective: {:>6.1f} '.format(objective))
+        print(config["SCENARIO"],'episode: {:>3}'.format(seed), ' objective: {:>6.1f} '.format(objective),'best:',"%.1f"%min(res))
 
     np.savez_compressed('Results/%s/res_%s'%(config["SCENARIO"],config["BASELINE"]),res=res)
     np.savez_compressed('Results/%s/time_%s'%(config["SCENARIO"],config["BASELINE"]),res=times)
 
 if __name__ == '__main__':
     
-#    config={"DATASET":"ACF25",
-#            "SCENARIO":"ACF25-SCp",
-#            "BASELINE":"uniform", # degree/uniform/distance
-#            "TRAJLEN":10,
-#            "ENUMFLAG":True,
-#            "EPISODES":1
-#            }
-#    runVNSWithEnumSaveSolution(config)
-        
-    for i in range(5,35,5):
-        for typ in ['m','p']:
-            for base in ["uniform","degree","distance"]:
-                
-                config={"DATASET": "ACF%d"%i,
-                        "SCENARIO": "ACF%d-SC%s"%(i,typ),
-                        "BASELINE": base, # degree/uniform/distance
-                        "TRAJLEN": 10,
-                        "ENUMFLAG": False,
-                        "EPISODES": 5000
-                        }
-                
-                runVNS(config)
-                print(base,"finished")
-        
-        
-                
-        
-        
-    
+    p=multiprocessing.Pool()
+    todo=[(i,typ,m) for i in range(5,25,5) for typ in [0,1,2] for m in ["degree","uniform","distance"]]
+    t1=time.time()
+    p=multiprocessing.Pool()
+    for i,res in enumerate(p.imap_unordered(runVNS,todo),1):
+        t2=time.time()
+        print("%0.2f%% done, time to finish: ~%0.1f minutes"%(i*100/len(todo),((t2-t1)/(60*(i+1)))*len(todo)-((t2-t1)/60)))
+            

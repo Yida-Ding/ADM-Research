@@ -38,9 +38,13 @@ class CrewHelper:
     def getAvailableCrew(self,tail,origin,destination,depTime,arrTime):
         for c in self.crewFlights:
             lastFlight=self.crewFlights[c][-1]
-            if lastFlight[1]==origin and lastFlight[3]+self.D.config["CREWMINCONTIME"]<=depTime:
+            timedelta=depTime-lastFlight[3]
+            if lastFlight[1]==origin and self.D.config["CREWMINCONTIME"]<=timedelta and timedelta<=self.D.config["CREWMAXCONTIME"]:
                 # Check whether to really use the crew
-                if lastFlight[4]!=tail or sum([cf[3]-cf[2] for cf in self.crewFlights[c]])<self.D.config["CREWMAXREPTIME"]:
+                if len(self.crewFlights[c])<self.D.config["CREWMAXLAND"] \
+                    and sum([cf[3]-cf[2] for cf in self.crewFlights[c]])+(arrTime-depTime)<self.D.config["CREWMAXFLTTIME"] \
+                    and arrTime-self.crewFlights[c][0][2]<self.D.config["CREWMAXDUTYTIME"]:
+                                    
                     self.crewFlights[c].append((origin,destination,depTime,arrTime,tail))
                     return c
                 
@@ -59,25 +63,28 @@ class ItineraryHelper:
         leaveall=0
         for it in self.itinFlights.copy():
             lastFlight=self.itinFlights[it][-1]
+            timedelta=depTime-lastFlight[4]
             # make sure the new flight added to itin will not return back to the previous origins
-            if lastFlight[2]==origin and lastFlight[4]+self.D.config["PAXMINCONTIME"]<=depTime and destination not in [flight[1] for flight in self.itinFlights[it]]:
-                if len(self.itinFlights[it])==1 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]:
-                    leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
-                    if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
-                        newItin="I%02d"%len(self.itinFlights)
-                        self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
-                        self.itinPax[it]-=leave
-                        self.itinPax[newItin]=leave
-                        leaveall+=leave
+            if lastFlight[2]==origin and timedelta>=self.D.config["PAXMINCONTIME"] and timedelta<=self.D.config["PAXMAXCONTIME"] \
+                and destination not in [flight[1] for flight in self.itinFlights[it]]:
                     
-                elif len(self.itinFlights[it])>=2 and random.uniform(0,1)>self.D.config["DIRECTITINPROB"]+self.D.config["TWOHOPITINPROB"]:
-                    leave=int(random.uniform(0.3,0.5)*self.itinPax[it])
-                    if leave>0 and leave<self.itinPax[it] and pax>leaveall+leave:
-                        newItin="I%02d"%len(self.itinFlights)
+                flag=False
+                newItin="I%02d"%len(self.itinFlights)
+                if len(self.itinFlights[it])==1:
+                    leave=int(self.D.config["TWOHOPITINPROB"]*self.itinPax[it])
+                    if leave>0:
+                        self.itinFlights[newItin]=[lastFlight,(fltname,origin,destination,depTime,arrTime,pax)]
+                        flag=True
+                elif len(self.itinFlights[it])==2:
+                    leave=int((1-self.D.config["DIRECTITINPROB"]-self.D.config["TWOHOPITINPROB"])*self.itinPax[it])
+                    if leave>0:
                         self.itinFlights[newItin]=self.itinFlights[it]+[(fltname,origin,destination,depTime,arrTime,pax)]
-                        self.itinPax[it]-=leave
-                        self.itinPax[newItin]=leave
-                        leaveall+=leave
+                        flag=True
+                
+                if flag:
+                    self.itinPax[it]-=leave
+                    self.itinPax[newItin]=leave
+                    leaveall+=leave
                         
         itin="I%02d"%len(self.itinFlights)
         self.itinFlights[itin]=[(fltname,origin,destination,depTime,arrTime,pax)]
@@ -121,7 +128,7 @@ def generateDataset(direname,config):
                 break
             fltname="F%02d"%flightind
             flightind+=1
-            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)//config["PAXSCALE"] # TODO: For simplicity
+            pax=int(D.config["LOADFACTOR"]*actyperow.PAX)
             crew=crewHelper.getAvailableCrew(acname,origin,destination,depTime,arrTime)
             itinHelper.getAvailableItinerary(fltname,origin,destination,depTime,arrTime,pax)
             flights+=[(fltname,origin,destination,depTime,arrTime,cruiseTime,crew,distance,pax)]
@@ -142,7 +149,7 @@ def generateDataset(direname,config):
             resd["Flight_time"].append(flight[4]-flight[3])
             resd["Cruise_time"].append(flight[5])
             resd["Distance"].append(flight[7])
-            resd["Capacity"].append(accap//config["PAXSCALE"]) # TODO: For simplicity
+            resd["Capacity"].append(accap)
             resd["Pax"].append(flight[8])
             resd["Timestring"].append(D.getTimeString(flight[3])+" -> "+D.getTimeString(flight[4]))
     
@@ -185,69 +192,40 @@ def generateDataset(direname,config):
 
 if __name__=='__main__':
     
-#    for i in range(5,35,5):
-#        
-#        config={"MAXAC":i, # Number of aicraft trajectories to generate
-#                "MAXAPT":i+random.randint(-2,2), # Number of airports
-#                "MAXACT":3, # Number of unique aircraft types
-#                "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
-#                "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
-#                "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
-#                "ACTAVGSPEED":800/3600, # Average speed of aircraft used to estimate flight duration
-#                "ACMINCONTIME":30*60, # Minimum connection time for aircraft
-#                "ACMAXCONTIME":600*60, # Maximum connection time for aircraft
-#                "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
-#                "CREWMAXREPTIME":4*3600, # Time for crew to have a break "from a tail"
-#                "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
-#                "STARTTIME":5*3600, # start at 5AM
-#                "ENDTIME":26*3600, # stop at 2AM next day
-#                "DIRECTITINPROB":0.85, # probability of direct itinerary
-#                "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
-#                "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6), maximum increase in cruise speed by a factor of 1.1
-#                "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
-#                "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance
-#                "FLIGHTCANCELCOST":20000, # Flight cancellation cost in dollar on page 22
-#                "FUELCOSTPERKG":0.478/0.454, # Jet fuel price per kg on page 22
-#                "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel consumption function parameters in 2014 paper
-#                "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
-#                "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
-#                "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
-#                "PAXSCALE":1, # For simplicity, scale down the number of passengers
-#                "SEED":0 # Random seed
-#                }
-#    
-#        generateDataset("ACF%d"%config["MAXAC"],config)
+    for i in range(5,35,5):
         
-        
-    config={"MAXAC":25, # Number of aicraft trajectories to generate
-            "MAXAPT":23, # Number of airports
-            "MAXACT":3, # Number of unique aircraft types
-            "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
-            "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
-            "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
-            "ACTAVGSPEED":800/3600, # Average speed of aircraft used to estimate flight duration
-            "ACMINCONTIME":30*60, # Minimum connection time for aircraft
-            "ACMAXCONTIME":600*60, # Maximum connection time for aircraft
-            "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
-            "CREWMAXREPTIME":4*3600, # Time for crew to have a break "from a tail"
-            "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
-            "STARTTIME":5*3600, # start at 5AM
-            "ENDTIME":26*3600, # stop at 2AM next day
-            "DIRECTITINPROB":0.85, # probability of direct itinerary
-            "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
-            "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6), maximum increase in cruise speed by a factor of 1.1
-            "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
-            "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance
-            "FLIGHTCANCELCOST":20000, # Flight cancellation cost in dollar on page 22
-            "FUELCOSTPERKG":0.478/0.454, # Jet fuel price per kg on page 22
-            "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel consumption function parameters in 2014 paper
-            "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
-            "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
-            "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
-            "PAXSCALE":1, # For simplicity, scale down the number of passengers
-            "SEED":2 # Random seed
-            }
-
-    generateDataset("ACF%d"%config["MAXAC"],config)
-        
+        config={"MAXAC":i, # Number of aicraft trajectories to generate
+                "MAXAPT":i+random.randint(-2,2), # Number of airports
+                "MAXACT":3, # Number of unique aircraft types
+                "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
+                "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
+                "MAXFLIGHTDISTANCE":3000, # No flights longer than this distance
+                "ACTAVGSPEED":800/3600, # Average speed of aircraft used to estimate flight duration
+                "ACMINCONTIME":30*60, # Minimum connection time for aircraft
+                "ACMAXCONTIME":600*60, # Maximum connection time for aircraft
+                "STARTTIME":5*3600, # start at 5AM
+                "ENDTIME":26*3600, # stop at 2AM next day
+                "DIRECTITINPROB":0.85, # probability of direct itinerary
+                "TWOHOPITINPROB":0.12, # probability of two-hop itinerary
+                "CRSTIMECOMPPCT":0.09, # Cruise time compression limit in percentage (Page 6), maximum increase in cruise speed by a factor of 1.1
+                "MAXHOLDTIME":2*3600, # Maximum departure/arrival hold time, corresponding to latest departure or arrival time
+                "CRUISESTAGEDISTPCT":0.8, # Percentage of cruise stage distance with respect to the flight distance
+                "FLIGHTCANCELCOST":20000, # Flight cancellation cost in dollar on page 22
+                "FUELCOSTPERKG":0.478/0.454, # Jet fuel price per kg on page 22
+                "FUELCONSUMPPARA":[0.01*3600,0.16*60,0.74/3600,2200/(60**3)], # Fuel consumption function parameters in 2014 paper
+                "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
+                "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
+                "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
+                "SEED":0, # Random seed
+                
+                "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
+                "CREWMAXCONTIME":4*3600, # Maximum connection sit-time between two consecutive flights within a same duty
+                "CREWMAXLAND":4, # Maximum number of landings within a crew duty
+                "CREWMAXFLTTIME":8*3600, # Maximum flying time within a duty
+                "CREWMAXDUTYTIME":12*3600, # Maximum duty duration, including flight times and connection times
+                "PAXMINCONTIME":30*60, # Minimum connection time for passenger to be ready for next flight
+                "PAXMAXCONTIME":8*3600 # Maximum allowable connection time for passengers
+                }
+    
+        generateDataset("ACF%d"%config["MAXAC"],config)
         

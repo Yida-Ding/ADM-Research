@@ -246,17 +246,14 @@ def getScenarioSummary(dataset,scenario):
 
 if __name__=="__main__":
     
-#    for size in range(5,35,5):
-#        for typ in ["m","p"]:
-#            print(size,typ)
-#            ana=Analyzer("ACF%d"%size,"ACF%d-SC%s"%(size,typ),"Mode1")
-#            ana.parseOutputData()
-#            res=ana.getRunTimeAndGap()
-#            print(res)
+    for size in range(5,35,5):
+        for typ in ["m","p"]:
+            print(size,typ)
+            ana=Analyzer("ACF%d"%size,"ACF%d-SC%s"%(size,typ),"Mode1")
+            ana.parseOutputData()
+            res=ana.getRunTimeAndGap()
+            print(res)
 
-    res=getDatasetSummary("ACF30")
-    res=getScenarioSummary("ACF30","ACF30-SCp")
-    print(res)
 
 
 
