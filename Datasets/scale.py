@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-for size in range(5,35,5):
-    
+
+for size in range(25,30,5):
     df=pd.read_csv("ACF%d/Schedule.csv"%size)
     df["Capacity"]=np.array(df["Capacity"])//20
     df["Pax"]=np.array(df["Pax"])//20
@@ -12,7 +12,7 @@ for size in range(5,35,5):
     df["Pax"]=np.array(df["Pax"])//20
     df.to_csv("ACF%d/Itinerary.csv"%size,index=None)
     
-for size in range(5,35,5):
+for size in range(25,30,5):
     df=pd.read_csv("ACF%d/Itinerary.csv"%size)
     resdpax=defaultdict(list)
     for row in df.itertuples():

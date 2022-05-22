@@ -39,9 +39,10 @@ def runCPLEX(dataset,scenario):
     mainResultAnalyzer(dataset,scenario)
 
 
+#    main("ACF5","ACF5-SCm",0.1,17)
+#    main("ACF25","ACF25-SCm",0.1,3)
+    
 if __name__ == '__main__':
-    main("ACF30","ACF30-SC0",0.1,20)
-
-
-
+    createScenario("ACF25","ACF25-SCp",0.3,114)
+#    main("ACF25","ACF25-SCp",0.3,114)
 

@@ -192,8 +192,8 @@ def generateDataset(direname,config):
 
 if __name__=='__main__':
             
-    config={"MAXAC":i, # Number of aicraft trajectories to generate
-            "MAXAPT":i+random.randint(-2,2), # Number of airports
+    config={"MAXAC":25, # Number of aicraft trajectories to generate
+            "MAXAPT":25+random.randint(-2,2), # Number of airports
             "MAXACT":3, # Number of unique aircraft types
             "LOADFACTOR":0.8, # Load factor for generating passengers from aircraft capacity
             "MINFLIGHTDISTANCE":600, # No flights shorter than this distance
@@ -214,7 +214,7 @@ if __name__=='__main__':
             "DELAYCOST":1.0242/60, # Delay cost per passenger per second on page 22
             "FOLLOWSCHEDULECOST":-1, # Negative cost to follow schedule arc for aircraft and crew teams on page 15
             "FOLLOWSCHEDULECOSTPAX":-0.1, # Negative cost to follow schedule arc for passenger on page 15
-            "SEED":0, # Random seed
+            "SEED":1, # Random seed
             
             "CREWMINCONTIME":30*60, # Minimum connection time for crew to be ready for next flight
             "CREWMAXCONTIME":4*3600, # Maximum connection sit-time between two consecutive flights within a same duty
